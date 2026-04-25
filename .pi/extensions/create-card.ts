@@ -5,8 +5,7 @@ import { Type } from "typebox";
  * Create Kanban Card Extension
  *
  * Lets the agent create a new card on the Kanban board.
- * Useful when the user asks for something in chat mode but then wants
- * it turned into an implementation task.
+ * Useful when a task should be tracked separately.
  */
 
 export default function (pi: ExtensionAPI) {
@@ -16,11 +15,10 @@ export default function (pi: ExtensionAPI) {
     description:
       "Create a new card on the Kanban board.\n\n" +
       "Use this when:\n" +
-      "- The user asks for something in chat mode but then wants it implemented as a coding task\n" +
+      "- The user wants something turned into a tracked implementation task\n" +
       "- You have a large sub-task that should be tracked separately\n" +
-      "- You want to hand off work to a fresh coding-session agent\n\n" +
-      "The card appears in the Backlog. The user must drag it to 'To Do' to start work.\n\n" +
-      "The created card will NOT automatically become a new working session for you — it is a separate card the user controls.",
+      "- You want to hand off work to a fresh agent session\n\n" +
+      "The card appears in the Backlog. The user must drag it to 'To Do' to start work.",
     parameters: Type.Object({
       title: Type.String({
         description: "Short title for the card (1–3 words)",
@@ -28,12 +26,6 @@ export default function (pi: ExtensionAPI) {
       description: Type.String({
         description: "What the new card should do. Be specific enough that another agent could pick it up.",
       }),
-      kind: Type.Optional(
-        Type.Union([
-          Type.Literal("coding", { description: "Agent has tools (read, edit, write, bash) for file changes" }),
-          Type.Literal("chat", { description: "Agent replies conversationally, no file tools" }),
-        ], { default: "coding" })
-      ),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -43,7 +35,6 @@ export default function (pi: ExtensionAPI) {
           body: JSON.stringify({
             title: params.title,
             description: params.description,
-            kind: params.kind || "coding",
           }),
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

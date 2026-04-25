@@ -26,7 +26,6 @@ export class Orchestrator {
       title: payload.title,
       description: payload.description,
       stage: "backlog",
-      kind: payload.kind || "coding",
       turnActive: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -49,7 +48,6 @@ export class Orchestrator {
         card.id,
         card.title,
         card.description,
-        card.kind,
         (event) => this.handleAgentEvent(card.id, event)
       );
       this.agents.set(card.id, agent);

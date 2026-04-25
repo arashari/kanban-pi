@@ -1,5 +1,3 @@
-export type CardKind = "chat" | "coding";
-
 export type CardStage =
   | "backlog"
   | "todo"
@@ -13,7 +11,6 @@ export interface KanbanCard {
   title: string;
   description: string;
   stage: CardStage;
-  kind: CardKind;
   sessionId?: string;
   turnActive?: boolean;
   createdAt: number;
@@ -43,7 +40,6 @@ export interface CardEvent {
 export interface CreateCardPayload {
   title: string;
   description: string;
-  kind?: CardKind;
 }
 
 export interface MoveCardPayload {

@@ -390,34 +390,3 @@ body {
   display: none;
 }
 
-/* Modal kind selector */
-.kind-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.kind-row label {
-  font-size: 12px;
-  color: #94a3b8;
-  flex-shrink: 0;
-}
-
-.kind-row select {
-  flex: 1;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  color: #e2e8f0;
-  padding: 8px 10px;
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.kind-row select:focus {
-  border-color: #3b82f6;
-  outline: none;
-}

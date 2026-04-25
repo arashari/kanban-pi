@@ -14,10 +14,9 @@ function renderCard(card) {
   el.dataset.stage = card.stage;
 
   const stageLabel = card.stage.replace("_", " ");
-  const kindBadge = card.kind === "chat" ? "💬" : "🔨";
 
   el.innerHTML = `
-    <div class="card-title">${kindBadge} ${escapeHtml(card.title)}</div>
+    <div class="card-title">${escapeHtml(card.title)}</div>
     <div class="card-desc">${escapeHtml(card.description)}</div>
     <span class="card-stage ${card.stage}">${stageLabel}</span>
     <div class="card-indicator" id="indicator-${card.id}">
@@ -182,13 +181,13 @@ cancelBtn.addEventListener("click", () => {
 createBtn.addEventListener("click", () => {
   const title = titleInput.value.trim();
   const description = descInput.value.trim();
-  const kind = document.getElementById("card-kind").value;
+
   if (!title) return;
 
   // Disable to prevent double-clicks
   createBtn.disabled = true;
 
-  socket.emit("create_card", { title, description, kind }, (card) => {
+  socket.emit("create_card", { title, description }, (card) => {
     // DO NOT add the card here — card_update from the server is the
     // single source of truth for DOM insertion. Close the modal and
     // let the broadcast handler place the card.

@@ -21,6 +21,37 @@ const io = new Server(httpServer, {
 });
 
 app.use(express.json());
+
+// ── Basic Auth ───────────────────────────────────────
+const AUTH_USER = process.env.KANBAN_USERNAME;
+const AUTH_PASS = process.env.KANBAN_PASSWORD;
+const AUTH_ENABLED = !!(AUTH_USER && AUTH_PASS);
+
+if (AUTH_ENABLED) {
+  log("🔒 Basic auth enabled");
+} else {
+  log("⚠️  Warning: KANBAN_USERNAME and KANBAN_PASSWORD not set — server is open");
+}
+
+function checkBasicAuth(authHeader?: string): boolean {
+  if (!AUTH_ENABLED) return true;
+  if (!authHeader) return false;
+  const [scheme, encoded] = authHeader.split(" ");
+  if (scheme !== "Basic" || !encoded) return false;
+  const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+  const [user, pass] = decoded.split(":");
+  return user === AUTH_USER && pass === AUTH_PASS;
+}
+
+app.use((req, res, next) => {
+  if (checkBasicAuth(req.headers.authorization)) {
+    next();
+  } else {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Kanban Pi"');
+    res.status(401).send("Authentication required");
+  }
+});
+
 app.use(express.static("public"));
 
 // Internal endpoint for the Kanban Stage extension
@@ -34,6 +65,15 @@ app.post("/internal/card-stage", (req, res) => {
 });
 
 const orchestrator = new Orchestrator(io);
+
+// ── Socket.io Auth ───────────────────────────────────
+io.use((socket, next) => {
+  if (checkBasicAuth(socket.handshake.headers.authorization)) {
+    next();
+  } else {
+    next(new Error("Authentication required"));
+  }
+});
 
 // ─── REST API ──────────────────────────────────────────────
 

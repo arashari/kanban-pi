@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io({ withCredentials: true });
 const cards = new Map();
 let activeCardId = null;
 let programmaticScroll = false;
@@ -447,7 +447,7 @@ socket.on("card_history", ({ cardId, events, total, hasMore, offset }) => {
 // ── Periodic sync — orchestrator is source of truth ────
 async function syncBoard() {
   try {
-    const res = await fetch("/api/cards");
+    const res = await fetch("/api/cards", { credentials: "include" });
     const serverCards = await res.json();
     serverCards.forEach((c) => {
       const existing = cards.get(c.id);

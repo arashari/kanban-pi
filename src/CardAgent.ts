@@ -14,8 +14,6 @@ export class CardAgent {
   public stage: CardStage = "backlog";
   public kind: CardKind;
   private session?: AgentSession;
-  private hasMadeToolCallsThisTurn = false;
-  private activeToolCalls = 0;
   private eventBuffer: string[] = [];
   private onEvent: (event: CardEvent) => void;
   private disposed = false;
@@ -55,30 +53,13 @@ export class CardAgent {
 
   private handleAgentEvent(event: any) {
     if (this.disposed) return;
-
     const type = event?.type;
-    console.log(`[agent ${this.cardId}] raw event type="${type}" keys=`, Object.keys(event || {}).join(","));
 
-    const assistantMessageEvent = event?.assistantMessageEvent;
-
-    // ── Text / Thinking deltas ──────────────────────────────
-    if (type === "message_update" && assistantMessageEvent) {
-      const ameType = assistantMessageEvent.type;
-
-      if (ameType === "thinking_delta") {
-        this.transitionTo("planning");
-        this.emit({
-          cardId: this.cardId,
-          type: "thinking_delta",
-          thinking: assistantMessageEvent.delta || "",
-        });
-      }
-
-      if (ameType === "text_delta") {
-        if (!this.hasMadeToolCallsThisTurn) {
-          this.transitionTo("planning");
-        }
-        const delta = assistantMessageEvent.delta || "";
+    // ── Streaming deltas for the drawer ──────────────────
+    if (type === "message_update" && event.assistantMessageEvent) {
+      const ame = event.assistantMessageEvent;
+      if (ame.type === "text_delta") {
+        const delta = ame.delta || "";
         this.eventBuffer.push(delta);
         this.emit({
           cardId: this.cardId,
@@ -86,13 +67,17 @@ export class CardAgent {
           text: delta,
         });
       }
+      if (ame.type === "thinking_delta") {
+        this.emit({
+          cardId: this.cardId,
+          type: "thinking_delta",
+          thinking: ame.delta || "",
+        });
+      }
     }
 
-    // ── Tool call started ───────────────────────────────────
+    // ── Tool call (drawer only) ─────────────────────────
     if (type === "tool_call") {
-      this.hasMadeToolCallsThisTurn = true;
-      this.activeToolCalls++;
-      this.transitionTo("in_progress");
       this.emit({
         cardId: this.cardId,
         type: "tool_call",
@@ -101,9 +86,8 @@ export class CardAgent {
       });
     }
 
-    // ── Tool result ─────────────────────────────────────────
+    // ── Tool result (drawer only) ───────────────────────
     if (type === "tool_result") {
-      this.activeToolCalls = Math.max(0, this.activeToolCalls - 1);
       this.emit({
         cardId: this.cardId,
         type: "tool_result",
@@ -112,20 +96,11 @@ export class CardAgent {
       });
     }
 
-    // ── Message end (assistant response complete) ──────────
-    if (type === "message_end" || type === "turn_end") {
-      console.log(`[agent ${this.cardId}] ${type} activeToolCalls=${this.activeToolCalls}`);
-      if (this.activeToolCalls === 0) {
-        this.transitionTo("in_review");
-        this.emitRunning(false);
-      }
-
-      this.hasMadeToolCallsThisTurn = false;
-      this.activeToolCalls = 0;
-
+    // ── Turn complete ───────────────────────────────────
+    // turn_end signals the entire LLM turn (messages + tools) is done.
+    if (type === "turn_end") {
       const fullText = this.eventBuffer.join("");
       this.eventBuffer = [];
-
       this.emit({
         cardId: this.cardId,
         type: "message_complete",
@@ -133,13 +108,15 @@ export class CardAgent {
       });
     }
 
-    // ── Agent lifecycle ─────────────────────────────────────
+    // ── Agent lifecycle (for turnActive indicator) ───────
+    if (type === "agent_start") {
+      this.emitRunning(true);
+    }
     if (type === "agent_end") {
-      console.log(`[agent ${this.cardId}] agent_end → emitRunning(false)`);
       this.emitRunning(false);
     }
 
-    // ── Error ───────────────────────────────────────────────
+    // ── Error ────────────────────────────────────────────
     if (type === "error") {
       this.emitRunning(false);
       this.emit({
@@ -148,17 +125,12 @@ export class CardAgent {
         error: event.message || String(event),
       });
     }
-
-    // ── Steering queued by user ─────────────────────────────
-    if (type === "message_queued" || type === "queue_update") {
-      // If the user steers while the agent is idle in in_review or done,
-      // go back to planning so the next turn starts immediately.
-      if (this.stage === "in_review" || this.stage === "done") {
-        this.transitionTo("planning");
-      }
-    }
   }
 
+  // ── Card stage changes ───────────────────────────────
+  // The ONLY source of stage changes after start() is the
+  // update_kanban_stage extension tool.  Never infer stage
+  // from SDK events.
   private transitionTo(stage: CardStage) {
     if (this.stage === stage) return;
     this.stage = stage;
@@ -170,7 +142,6 @@ export class CardAgent {
   }
 
   private emitRunning(active: boolean) {
-    console.log(`[agent ${this.cardId}] emitRunning(${active}) stage=${this.stage}`);
     this.emit({
       cardId: this.cardId,
       type: "status",
@@ -178,11 +149,13 @@ export class CardAgent {
     });
   }
 
+  // ── Turn lifecycle ───────────────────────────────────
   async start() {
     if (this.stage !== "backlog" && this.stage !== "todo") return;
     if (!this.session) {
       await this.init();
     }
+    // Initial stage: the agent is about to begin.
     this.transitionTo("planning");
 
     const promptText =
@@ -190,8 +163,8 @@ export class CardAgent {
         ? `You are in a chat conversation. Reply naturally.\n\n` +
           `User asks: ${this.title}\n` +
           `${this.description ? "More context: " + this.description : ""}`
-        : `You are working on a coding task. ` +
-          `Respond naturally. Only use tools if the task requires file changes.\n\n` +
+        : `You are working on a coding task. Respond naturally. Only use tools if the task requires file changes.\n\n` +
+          `IMPORTANT: As you work, call the update_kanban_stage tool to report your current phase (planning → in_progress → in_review → done). The user sees a Kanban board and wants to track your progress.\n\n` +
           `Workspace directory: ${process.cwd()}\n` +
           `\n` +
           `Task: ${this.title}\n` +

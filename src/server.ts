@@ -30,7 +30,6 @@ app.post("/internal/card-stage", (req, res) => {
     return res.status(400).json({ received: false, error: "Missing sessionId or stage" });
   }
   const ok = orchestrator.updateCardStageBySession(sessionId, stage, reason);
-  log("Extension stage report:", req.body, ok ? "(applied)" : "(ignored)");
   res.json({ received: ok });
 });
 
@@ -71,63 +70,35 @@ app.delete("/api/cards/:id", (req, res) => {
 // ─── Socket.io ─────────────────────────────────────────────
 
 io.on("connection", (socket) => {
-  log("Client connected:", socket.id);
-
-  // Send full board state on connect
-  const board = orchestrator.getAllCards();
-  log("Emit board_state:", board.map((c) => `${c.id}:${c.stage}(turnActive=${c.turnActive})`).join(", "));
-  socket.emit("board_state", board);
+  socket.emit("board_state", orchestrator.getAllCards());
 
   socket.on("create_card", (payload: CreateCardPayload, ack) => {
     const card = orchestrator.createCard(payload);
-    log("Socket create_card ack:", card.id, card.stage);
     ack?.(card);
   });
 
   socket.on("move_card", (payload: MoveCardPayload) => {
-    log("Socket move_card:", payload.cardId, "→", payload.stage);
-    orchestrator.moveCard(payload).catch((err) => {
-      log("move_card error:", err.message);
-      console.error(err);
-    });
+    orchestrator.moveCard(payload).catch(log);
   });
 
   socket.on("prompt_card", (payload: PromptCardPayload) => {
-    log("Socket prompt_card:", payload.cardId);
-    orchestrator.promptCard(payload).catch((err) => {
-      log("prompt_card error:", err.message);
-      console.error(err);
-    });
+    orchestrator.promptCard(payload).catch(log);
   });
 
   socket.on("steer_card", ({ cardId, message }: { cardId: string; message: string }) => {
-    log("Socket steer_card:", cardId, "msg:", message.slice(0, 40));
-    orchestrator.steerCard(cardId, message).catch((err) => {
-      log("steer_card error:", err.message);
-      console.error(err);
-    });
+    orchestrator.steerCard(cardId, message).catch(log);
   });
 
   socket.on("interrupt_card", (cardId: string) => {
-    log("Socket interrupt_card:", cardId);
-    orchestrator.interruptCard(cardId).catch((err) => {
-      log("interrupt_card error:", err.message);
-      console.error(err);
-    });
+    orchestrator.interruptCard(cardId).catch(log);
   });
 
   socket.on("view_card", (payload: string | { cardId: string; offset?: number; limit?: number }) => {
     const cardId = typeof payload === "string" ? payload : payload.cardId;
     const offset = typeof payload === "object" ? payload.offset || 0 : 0;
     const limit = typeof payload === "object" ? payload.limit || 50 : 50;
-    log("Socket view_card:", cardId, "offset:", offset, "limit:", limit);
     const { events, total, hasMore } = orchestrator.getCardHistory(cardId, offset, limit);
     socket.emit("card_history", { cardId, events, total, hasMore, offset });
-    log("Emit card_history:", cardId, "events:", events.length, "total:", total, "hasMore:", hasMore);
-  });
-
-  socket.on("disconnect", () => {
-    log("Client disconnected:", socket.id);
   });
 });
 

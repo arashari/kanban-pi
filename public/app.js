@@ -182,12 +182,13 @@ cancelBtn.addEventListener("click", () => {
 createBtn.addEventListener("click", () => {
   const title = titleInput.value.trim();
   const description = descInput.value.trim();
+  const kind = document.getElementById("card-kind").value;
   if (!title) return;
 
   // Disable to prevent double-clicks
   createBtn.disabled = true;
 
-  socket.emit("create_card", { title, description }, (card) => {
+  socket.emit("create_card", { title, description, kind }, (card) => {
     // DO NOT add the card here — card_update from the server is the
     // single source of truth for DOM insertion. Close the modal and
     // let the broadcast handler place the card.

@@ -160,15 +160,30 @@ export class CardAgent {
 
     const promptText =
       this.kind === "chat"
-        ? `You are in a chat conversation. Reply naturally.\n\n` +
-          `User asks: ${this.title}\n` +
-          `${this.description ? "More context: " + this.description : ""}`
-        : `You are working on a coding task. Respond naturally. Only use tools if the task requires file changes.\n\n` +
-          `IMPORTANT: As you work, call the update_kanban_stage tool to report your current phase (planning → in_progress → in_review → done). The user sees a Kanban board and wants to track your progress.\n\n` +
-          `Workspace directory: ${process.cwd()}\n` +
-          `\n` +
-          `Task: ${this.title}\n` +
-          `Description: ${this.description}`;
+        ? `You are in a chat conversation. Reply naturally.
+
+If the user's question is vague or could mean multiple things, ask a clarifying question before answering.
+
+User asks: ${this.title}
+${this.description ? "More context: " + this.description : ""}`
+        : `You are working on a coding task. Respond naturally. Only use tools if the task requires file changes.
+
+=== PLANNING PHASE — ASK IF UNSURE ===
+Before you create any files or make any changes, think about whether the user's intent is 100% clear.
+If the task title or description is ambiguous — for example, it sounds like a chat question instead of a coding task, or you are not sure what files to modify — DO NOT create files.
+Instead, stay in the planning stage and ask the user a clarifying question. Wait for their answer.
+
+Examples where you SHOULD ask for clarification:
+- "cendol recipe" → this could be a chat answer or creating a .md file; ask which one.
+- "fix the bug" → ask which bug, which file, or what the expected behavior is.
+- "add feature" → ask which feature and where it should go.
+
+Once you are confident about the task, call update_kanban_stage to report your phase (planning → in_progress → in_review → done).
+
+Workspace directory: ${process.cwd()}
+
+Task: ${this.title}
+Description: ${this.description}`;
 
     this.emitRunning(true);
     await this.session!.prompt(promptText);

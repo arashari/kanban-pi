@@ -36,9 +36,9 @@ export class CardAgent {
     const opts: any = {
       sessionManager: SessionManager.create(process.cwd()),
     };
-    if (this.kind === "chat") {
-      opts.noTools = "all";
-    }
+    // Chat sessions used to disable all tools with noTools:"all",
+    // but that also blocks extension tools like create_kanban_card.
+    // Instead, keep extensions loaded and guide behaviour via prompt.
     const { session } = await createAgentSession(opts);
     this.session = session;
 

@@ -44,10 +44,11 @@ export class Orchestrator {
     card.stage = payload.stage;
     card.updatedAt = Date.now();
 
-    console.log(`[orchestrator] Card ${card.id} moved: ${oldStage} → ${card.stage} (user)`);
+    console.log(`[orchestrator] moveCard: ${card.id} stage ${oldStage} → ${card.stage} turnActive=${card.turnActive}`);
     // Stage machine transitions
     if (payload.stage === "todo" && oldStage === "backlog") {
       // Create agent session when moved to todo
+      console.log(`[orchestrator] moveCard: creating agent for ${card.id}`);
       const agent = new CardAgent(
         card.id,
         card.title,
@@ -58,8 +59,11 @@ export class Orchestrator {
       this.agents.set(card.id, agent);
       await agent.init();
       card.sessionId = agent.sessionId;
+      console.log(`[orchestrator] moveCard: after init card=${card.id} stage=${card.stage} turnActive=${card.turnActive}`);
       this.broadcastCardUpdate(card);
+      console.log(`[orchestrator] moveCard: calling start()`);
       await agent.start();
+      console.log(`[orchestrator] moveCard: after start card=${card.id} stage=${card.stage} turnActive=${card.turnActive}`);
     }
 
     if (payload.stage === "done") {
@@ -188,6 +192,7 @@ export class Orchestrator {
 
     // Track running/idle state separately from history stream
     if (event.type === "status" && (event.text === "running" || event.text === "idle")) {
+      console.log(`[orchestrator] handleAgentEvent status: card=${card.id} turnActive=${event.text === "running"} current_stage=${card.stage}`);
       card.turnActive = event.text === "running";
       this.broadcastCardUpdate(card);
       return; // synthetic state event — skip history and drawer

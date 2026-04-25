@@ -112,6 +112,7 @@ export class CardAgent {
 
     // ── Message complete ──────────────────────────────────────
     if (type === "message_complete") {
+      console.log(`[agent ${this.cardId}] message_complete activeToolCalls=${this.activeToolCalls}`);
       if (this.activeToolCalls === 0) {
         this.transitionTo("in_review");
         this.emitRunning(false);
@@ -161,6 +162,7 @@ export class CardAgent {
   }
 
   private emitRunning(active: boolean) {
+    console.log(`[agent ${this.cardId}] emitRunning(${active}) stage=${this.stage}`);
     this.emit({
       cardId: this.cardId,
       type: "status",

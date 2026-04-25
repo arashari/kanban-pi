@@ -3,6 +3,16 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { Orchestrator } from "./orchestrator.js";
 import type { CreateCardPayload, MoveCardPayload, PromptCardPayload } from "./types.js";
+import fs from "fs";
+
+// ── Logger ─────────────────────────────────────────────
+const LOG_PATH = process.env.LOG_FILE || "server.log";
+const logStream = fs.createWriteStream(LOG_PATH, { flags: "a" });
+function log(...args: unknown[]) {
+  const line = `[${new Date().toISOString()}] ${args.map(String).join(" ")}`;
+  console.log(line);
+  logStream.write(line + "\n");
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,7 +30,7 @@ app.post("/internal/card-stage", (req, res) => {
     return res.status(400).json({ received: false, error: "Missing sessionId or stage" });
   }
   const ok = orchestrator.updateCardStageBySession(sessionId, stage, reason);
-  console.log("Extension stage report:", req.body, ok ? "(applied)" : "(ignored)");
+  log("Extension stage report:", req.body, ok ? "(applied)" : "(ignored)");
   res.json({ received: ok });
 });
 
@@ -61,46 +71,67 @@ app.delete("/api/cards/:id", (req, res) => {
 // ─── Socket.io ─────────────────────────────────────────────
 
 io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
+  log("Client connected:", socket.id);
 
   // Send full board state on connect
-  socket.emit("board_state", orchestrator.getAllCards());
+  const board = orchestrator.getAllCards();
+  log("Emit board_state:", board.map((c) => `${c.id}:${c.stage}(turnActive=${c.turnActive})`).join(", "));
+  socket.emit("board_state", board);
 
   socket.on("create_card", (payload: CreateCardPayload, ack) => {
     const card = orchestrator.createCard(payload);
+    log("Socket create_card ack:", card.id, card.stage);
     ack?.(card);
   });
 
   socket.on("move_card", (payload: MoveCardPayload) => {
-    orchestrator.moveCard(payload).catch(console.error);
+    log("Socket move_card:", payload.cardId, "→", payload.stage);
+    orchestrator.moveCard(payload).catch((err) => {
+      log("move_card error:", err.message);
+      console.error(err);
+    });
   });
 
   socket.on("prompt_card", (payload: PromptCardPayload) => {
-    orchestrator.promptCard(payload).catch(console.error);
+    log("Socket prompt_card:", payload.cardId);
+    orchestrator.promptCard(payload).catch((err) => {
+      log("prompt_card error:", err.message);
+      console.error(err);
+    });
   });
 
   socket.on("steer_card", ({ cardId, message }: { cardId: string; message: string }) => {
-    orchestrator.steerCard(cardId, message).catch(console.error);
+    log("Socket steer_card:", cardId, "msg:", message.slice(0, 40));
+    orchestrator.steerCard(cardId, message).catch((err) => {
+      log("steer_card error:", err.message);
+      console.error(err);
+    });
   });
 
   socket.on("interrupt_card", (cardId: string) => {
-    orchestrator.interruptCard(cardId).catch(console.error);
+    log("Socket interrupt_card:", cardId);
+    orchestrator.interruptCard(cardId).catch((err) => {
+      log("interrupt_card error:", err.message);
+      console.error(err);
+    });
   });
 
   socket.on("view_card", (payload: string | { cardId: string; offset?: number; limit?: number }) => {
     const cardId = typeof payload === "string" ? payload : payload.cardId;
     const offset = typeof payload === "object" ? payload.offset || 0 : 0;
     const limit = typeof payload === "object" ? payload.limit || 50 : 50;
+    log("Socket view_card:", cardId, "offset:", offset, "limit:", limit);
     const { events, total, hasMore } = orchestrator.getCardHistory(cardId, offset, limit);
     socket.emit("card_history", { cardId, events, total, hasMore, offset });
+    log("Emit card_history:", cardId, "events:", events.length, "total:", total, "hasMore:", hasMore);
   });
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    log("Client disconnected:", socket.id);
   });
 });
 
 const PORT = process.env.PORT || 3456;
 httpServer.listen(PORT, () => {
-  console.log(`🦀 Kanban Pi server running on http://localhost:${PORT}`);
+  log(`🦀 Kanban Pi server running on http://localhost:${PORT}`);
 });

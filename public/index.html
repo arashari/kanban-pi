@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kanban Pi — Agent-Powered Board</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <header class="header">
+    <h1>🦀 Kanban Pi</h1>
+    <button id="new-card-btn" class="btn">🐱 + New Card</button>
+  </header>
+
+  <main class="board">
+    <div class="column" data-stage="backlog">
+      <h2>📋 Backlog</h2>
+      <div class="dropzone" id="col-backlog"></div>
+    </div>
+    <div class="column" data-stage="todo">
+      <h2>⏳ To Do</h2>
+      <div class="dropzone" id="col-todo"></div>
+    </div>
+    <div class="column" data-stage="planning">
+      <h2>🧠 Planning</h2>
+      <div class="dropzone" id="col-planning"></div>
+    </div>
+    <div class="column" data-stage="in_progress">
+      <h2>🔨 In Progress</h2>
+      <div class="dropzone" id="col-in_progress"></div>
+    </div>
+    <div class="column" data-stage="in_review">
+      <h2>👀 In Review</h2>
+      <div class="dropzone" id="col-in_review"></div>
+    </div>
+    <div class="column" data-stage="done">
+      <h2>✅ Done</h2>
+      <div class="dropzone" id="col-done"></div>
+    </div>
+  </main>
+
+  <!-- New Card Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Create New Card</h3>
+      <input id="card-title" type="text" placeholder="Card title..." />
+      <textarea id="card-desc" rows="4" placeholder="What should the agent do?"></textarea>
+      <div class="modal-actions">
+        <button id="cancel-btn" class="btn-secondary">Cancel</button>
+        <button id="create-btn" class="btn">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card Detail Drawer -->
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-header">
+      <h3 id="drawer-title">Card</h3>
+      <button id="drawer-close" class="btn-icon">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div id="drawer-loader" class="drawer-loader hidden">
+        <span class="spinner" style="width: 12px; height: 12px;"></span>
+        <span>Loading older history…</span>
+      </div>
+      <div id="drawer-meta" class="meta"></div>
+      <div id="drawer-stream" class="stream"></div>
+      <button id="jump-to-latest" class="jump-to-latest hidden">⬇ Jump to latest</button>
+    </div>
+    <div class="drawer-footer">
+      <input id="drawer-input" type="text" placeholder="Steer the agent..." />
+      <button id="drawer-interrupt" class="btn btn-danger">⏹ Interrupt</button>
+      <button id="drawer-send" class="btn">Send</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

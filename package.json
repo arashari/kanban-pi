@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "tui": "tsx src/tui/client.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,8 +17,10 @@
     "@mariozechner/pi-coding-agent": "^0.70.2",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
+    "chalk": "^5.6.2",
     "express": "^5.2.1",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }

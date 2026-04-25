@@ -57,6 +57,8 @@ export class CardAgent {
     if (this.disposed) return;
 
     const type = event?.type;
+    console.log(`[agent ${this.cardId}] raw event type="${type}" keys=`, Object.keys(event || {}).join(","));
+
     const assistantMessageEvent = event?.assistantMessageEvent;
 
     // ── Text / Thinking deltas ──────────────────────────────
@@ -105,14 +107,14 @@ export class CardAgent {
       this.emit({
         cardId: this.cardId,
         type: "tool_result",
-        toolName: event.toolCall?.toolName || "unknown",
-        output: event.result,
+        toolName: event.toolName || "unknown",
+        output: event.content || event.result,
       });
     }
 
-    // ── Message complete ──────────────────────────────────────
-    if (type === "message_complete") {
-      console.log(`[agent ${this.cardId}] message_complete activeToolCalls=${this.activeToolCalls}`);
+    // ── Message end (assistant response complete) ──────────
+    if (type === "message_end" || type === "turn_end") {
+      console.log(`[agent ${this.cardId}] ${type} activeToolCalls=${this.activeToolCalls}`);
       if (this.activeToolCalls === 0) {
         this.transitionTo("in_review");
         this.emitRunning(false);
@@ -131,6 +133,12 @@ export class CardAgent {
       });
     }
 
+    // ── Agent lifecycle ─────────────────────────────────────
+    if (type === "agent_end") {
+      console.log(`[agent ${this.cardId}] agent_end → emitRunning(false)`);
+      this.emitRunning(false);
+    }
+
     // ── Error ───────────────────────────────────────────────
     if (type === "error") {
       this.emitRunning(false);
@@ -142,7 +150,7 @@ export class CardAgent {
     }
 
     // ── Steering queued by user ─────────────────────────────
-    if (type === "message_queued") {
+    if (type === "message_queued" || type === "queue_update") {
       // If the user steers while the agent is idle in in_review or done,
       // go back to planning so the next turn starts immediately.
       if (this.stage === "in_review" || this.stage === "done") {

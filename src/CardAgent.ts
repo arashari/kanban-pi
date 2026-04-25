@@ -16,7 +16,6 @@ export class CardAgent {
   private session?: AgentSession;
   private hasMadeToolCallsThisTurn = false;
   private activeToolCalls = 0;
-  private pendingSteering = false;
   private eventBuffer: string[] = [];
   private onEvent: (event: CardEvent) => void;
   private disposed = false;
@@ -113,13 +112,12 @@ export class CardAgent {
 
     // ── Message complete ──────────────────────────────────────
     if (type === "message_complete") {
-      if (this.activeToolCalls === 0 && !this.pendingSteering) {
+      if (this.activeToolCalls === 0) {
         this.transitionTo("in_review");
       }
 
       this.hasMadeToolCallsThisTurn = false;
       this.activeToolCalls = 0;
-      this.pendingSteering = false;
 
       const fullText = this.eventBuffer.join("");
       this.eventBuffer = [];
@@ -142,7 +140,8 @@ export class CardAgent {
 
     // ── Steering queued by user ─────────────────────────────
     if (type === "message_queued") {
-      this.pendingSteering = true;
+      // If the user steers while the agent is idle in in_review or done,
+      // go back to planning so the next turn starts immediately.
       if (this.stage === "in_review" || this.stage === "done") {
         this.transitionTo("planning");
       }

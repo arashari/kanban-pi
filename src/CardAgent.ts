@@ -164,6 +164,8 @@ export class CardAgent {
 
 If the user's question is vague or could mean multiple things, ask a clarifying question before answering.
 
+If the user asks for something that should later become a coding task (e.g., "now create that as a file"), use the create_kanban_card tool to make a new card instead of creating files directly.
+
 User asks: ${this.title}
 ${this.description ? "More context: " + this.description : ""}`
         : `You are working on a coding task. Respond naturally. Only use tools if the task requires file changes.
@@ -178,7 +180,9 @@ Examples where you SHOULD ask for clarification:
 - "fix the bug" → ask which bug, which file, or what the expected behavior is.
 - "add feature" → ask which feature and where it should go.
 
-Once you are confident about the task, call update_kanban_stage to report your phase (planning → in_progress → in_review → done).
+=== WORKFLOW ===
+1. Use update_kanban_stage to report your current phase (planning → in_progress → in_review → done).
+2. Use create_kanban_card if the user wants a new task spun off as a separate card.
 
 Workspace directory: ${process.cwd()}
 

@@ -114,6 +114,7 @@ export class CardAgent {
     if (type === "message_complete") {
       if (this.activeToolCalls === 0) {
         this.transitionTo("in_review");
+        this.emitRunning(false);
       }
 
       this.hasMadeToolCallsThisTurn = false;
@@ -131,6 +132,7 @@ export class CardAgent {
 
     // ── Error ───────────────────────────────────────────────
     if (type === "error") {
+      this.emitRunning(false);
       this.emit({
         cardId: this.cardId,
         type: "error",
@@ -158,6 +160,14 @@ export class CardAgent {
     });
   }
 
+  private emitRunning(active: boolean) {
+    this.emit({
+      cardId: this.cardId,
+      type: "status",
+      text: active ? "running" : "idle",
+    });
+  }
+
   async start() {
     if (this.stage !== "backlog" && this.stage !== "todo") return;
     if (!this.session) {
@@ -165,29 +175,27 @@ export class CardAgent {
     }
     this.transitionTo("planning");
 
-    if (this.kind === "chat") {
-      // Chat-only: no tools, just a straight prompt
-      await this.session!.prompt(
-        `You are in a chat conversation. Reply naturally.\n\n` +
+    const promptText =
+      this.kind === "chat"
+        ? `You are in a chat conversation. Reply naturally.\n\n` +
           `User asks: ${this.title}\n` +
           `${this.description ? "More context: " + this.description : ""}`
-      );
-    } else {
-      await this.session!.prompt(
-        `You are working on a coding task. ` +
+        : `You are working on a coding task. ` +
           `Respond naturally. Only use tools if the task requires file changes.\n\n` +
           `Workspace directory: ${process.cwd()}\n` +
           `\n` +
           `Task: ${this.title}\n` +
-          `Description: ${this.description}`
-      );
-    }
+          `Description: ${this.description}`;
+
+    this.emitRunning(true);
+    await this.session!.prompt(promptText);
   }
 
   async prompt(message: string) {
     if (!this.session) {
       throw new Error("Session not initialized");
     }
+    this.emitRunning(true);
     await this.session.sendUserMessage(message, { deliverAs: "steer" });
   }
 
@@ -195,16 +203,19 @@ export class CardAgent {
     if (!this.session) {
       throw new Error("Session not initialized");
     }
+    this.emitRunning(true);
     await this.session.sendUserMessage(message, { deliverAs: "steer" });
   }
 
   async abort() {
     if (!this.session) return;
     await this.session.abort();
+    this.emitRunning(false);
   }
 
   async dispose() {
     this.disposed = true;
+    this.emitRunning(false);
     if (this.session) {
       this.session.dispose();
       this.session = undefined;

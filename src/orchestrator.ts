@@ -186,6 +186,12 @@ export class Orchestrator {
     const card = this.cards.get(cardId);
     if (!card) return;
 
+    // Track running/idle state separately from history stream
+    if (event.type === "status" && (event.text === "running" || event.text === "idle")) {
+      card.turnActive = event.text === "running";
+      this.broadcastCardUpdate(card);
+      return; // synthetic state event — skip history and drawer
+    }
     // Store in history for reload replay
     const history = this.eventHistory.get(cardId) || [];
     history.push(event);

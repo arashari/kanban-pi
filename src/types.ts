@@ -15,6 +15,7 @@ export interface KanbanCard {
   stage: CardStage;
   kind: CardKind;
   sessionId?: string;
+  turnActive?: boolean;
   createdAt: number;
   updatedAt: number;
 }

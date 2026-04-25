@@ -31,6 +31,7 @@ export class Orchestrator {
       updatedAt: Date.now(),
     };
     this.cards.set(id, card);
+    console.log(`[orchestrator] Card ${id} created: "${card.title}" → backlog`);
     this.broadcastCardUpdate(card);
     return card;
   }
@@ -43,6 +44,7 @@ export class Orchestrator {
     card.stage = payload.stage;
     card.updatedAt = Date.now();
 
+    console.log(`[orchestrator] Card ${card.id} moved: ${oldStage} → ${card.stage} (user)`);
     // Stage machine transitions
     if (payload.stage === "todo" && oldStage === "backlog") {
       // Create agent session when moved to todo
@@ -139,8 +141,11 @@ export class Orchestrator {
     const card = this.cards.get(cardId);
     if (!card) return false;
 
+    const prev = card.stage;
     card.stage = stage;
     card.updatedAt = Date.now();
+
+    console.log(`[orchestrator] Card ${cardId} moved: ${prev} → ${stage} (extension${reason ? ", " + reason : ""})`);
 
     const event: CardEvent = {
       cardId,
@@ -187,8 +192,10 @@ export class Orchestrator {
     this.eventHistory.set(cardId, history);
 
     if (event.type === "stage_change" && event.stage) {
+      const prev = card.stage;
       card.stage = event.stage;
       card.updatedAt = Date.now();
+      console.log(`[orchestrator] Card ${cardId} moved: ${prev} → ${event.stage} (agent)`);
       this.broadcastCardUpdate(card);
     }
 

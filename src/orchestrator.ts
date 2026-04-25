@@ -27,6 +27,7 @@ export class Orchestrator {
       description: payload.description,
       stage: "backlog",
       kind: payload.kind || "coding",
+      turnActive: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -73,10 +74,12 @@ export class Orchestrator {
         await agent.dispose();
         this.agents.delete(card.id);
       }
+      card.turnActive = false;
     }
 
     if (payload.stage === "backlog" && oldStage !== "backlog") {
       // Pause / abort current work
+      card.turnActive = false;
       const agent = this.agents.get(card.id);
       if (agent) {
         await agent.abort();

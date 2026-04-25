@@ -21,7 +21,7 @@ function renderCard(card) {
     <div class="card-desc">${escapeHtml(card.description)}</div>
     <span class="card-stage ${card.stage}">${stageLabel}</span>
     <div class="card-indicator" id="indicator-${card.id}">
-      ${card.turnActive ? '<div class="spinner"></div><span>Running…</span>' : ["planning","in_progress","in_review"].includes(card.stage) ? '<div style="width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:6px;display:inline-block;"></div><span>Waiting…</span>' : ""}
+      ${card.turnActive ? '<div class="spinner"></div><span>Running…</span>' : ""}
     </div>
   `;
 
@@ -63,8 +63,6 @@ function updateCardDom(card) {
   if (indicator) {
     if (card.turnActive) {
       indicator.innerHTML = '<div class="spinner"></div><span>Running…</span>';
-    } else if (["planning", "in_progress", "in_review"].includes(card.stage)) {
-      indicator.innerHTML = '<div style="width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:6px;display:inline-block;"></div><span>Waiting…</span>';
     } else {
       indicator.innerHTML = "";
     }

@@ -59,6 +59,7 @@ export class CardAgent {
       sessionManager: SessionManager.create(cwd),
     });
     this.session = session;
+    session.setSessionName(this.title);
     session.subscribe((event) => this.handleAgentEvent(event as any));
     this.emit({
       cardId: this.cardId,

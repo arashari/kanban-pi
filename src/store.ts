@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { KanbanCard, Project } from "./types.js";
+import type { KanbanCard, Project, CardEvent } from "./types.js";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
@@ -8,6 +8,7 @@ const STATE_PATH = path.join(DATA_DIR, "state.json");
 interface PersistedState {
   projects: Project[];
   cards: KanbanCard[];
+  events?: Record<string, CardEvent[]>;
 }
 
 function ensureDir() {
@@ -25,7 +26,7 @@ export function loadState(): PersistedState {
       path: process.cwd(),
       createdAt: Date.now(),
     };
-    const state: PersistedState = { projects: [defaultProject], cards: [] };
+    const state: PersistedState = { projects: [defaultProject], cards: [], events: {} };
     saveState(state);
     return state;
   }
@@ -38,6 +39,8 @@ export function loadState(): PersistedState {
         if (!card.projectId) card.projectId = "default";
       }
     }
+    // Backward compat: ensure events exists
+    if (!parsed.events) parsed.events = {};
     return parsed;
   } catch {
     const defaultProject: Project = {
@@ -46,7 +49,7 @@ export function loadState(): PersistedState {
       path: process.cwd(),
       createdAt: Date.now(),
     };
-    const state: PersistedState = { projects: [defaultProject], cards: [] };
+    const state: PersistedState = { projects: [defaultProject], cards: [], events: {} };
     saveState(state);
     return state;
   }
@@ -97,4 +100,14 @@ export function saveCards(cards: KanbanCard[]) {
 
 export function getCards(): KanbanCard[] {
   return loadState().cards;
+}
+
+export function saveEvents(events: Record<string, CardEvent[]>) {
+  const state = loadState();
+  state.events = events;
+  saveState(state);
+}
+
+export function getEvents(): Record<string, CardEvent[]> {
+  return loadState().events ?? {};
 }

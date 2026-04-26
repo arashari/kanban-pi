@@ -14,7 +14,7 @@ import type {
   CommitInfo,
   Project,
 } from "./types.js";
-import { loadState, saveState, getProjectById, getProjects } from "./store.js";
+import { loadState, saveState, getProjectById, getProjects, saveEvents, getEvents } from "./store.js";
 
 const execAsync = promisify(exec);
 const WORKTREE_BASE = ".kanban-worktrees";
@@ -32,6 +32,11 @@ export class Orchestrator {
     for (const card of state.cards) {
       this.cards.set(card.id, card);
       this.eventHistory.set(card.id, []);
+    }
+    // Restore persisted events
+    const persistedEvents = getEvents();
+    for (const [cardId, events] of Object.entries(persistedEvents)) {
+      this.eventHistory.set(cardId, events);
     }
   }
 
@@ -224,7 +229,11 @@ export class Orchestrator {
 
     if (card?.chatOnly) {
       try {
-        await fs.promises.rm(`/tmp/.kanban-chat-${cardId}`, { recursive: true, force: true });
+        const project = getProjectById(card.projectId);
+        const chatDir = project?.path || `/tmp/.kanban-chat-${cardId}`;
+        if (chatDir.startsWith("/tmp/.kanban-chat-")) {
+          await fs.promises.rm(chatDir, { recursive: true, force: true });
+        }
       } catch {}
     }
 
@@ -431,6 +440,10 @@ export class Orchestrator {
   }
 
   private persistCards() {
-    saveState({ projects: getProjects(), cards: this.getAllCards() });
+    const events: Record<string, CardEvent[]> = {};
+    for (const [cardId, history] of this.eventHistory) {
+      events[cardId] = history;
+    }
+    saveState({ projects: getProjects(), cards: this.getAllCards(), events });
   }
 }

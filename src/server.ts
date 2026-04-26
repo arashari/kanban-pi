@@ -252,6 +252,10 @@ io.on("connection", (socket) => {
     orchestrator.interruptCard(cardId).catch(log);
   });
 
+  socket.on("delete_card", (cardId: string) => {
+    orchestrator.deleteCard(cardId).catch(log);
+  });
+
   socket.on("view_card", (payload: string | { cardId: string; offset?: number; limit?: number }) => {
     const cardId = typeof payload === "string" ? payload : payload.cardId;
     const offset = typeof payload === "object" ? payload.offset || 0 : 0;

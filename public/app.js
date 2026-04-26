@@ -137,7 +137,7 @@ socket.on("card_update", (card) => {
   } else {
     updateCardDom(card);
   }
-  // If this card is open, refresh its meta line
+  // If this card is open, refresh its meta line and interrupt button
   if (activeCardId === card.id) {
     let meta = `${card.stage.replace("_", " ").toUpperCase()}`;
     if (card.chatOnly) meta += " · 💬 Chat only";
@@ -149,6 +149,7 @@ socket.on("card_update", (card) => {
     if (card.mergeError) meta += `\n❌ Merge error: ${card.mergeError}`;
     meta += `\n—\n${card.description}`;
     drawerMeta.textContent = meta;
+    updateInterruptButton();
   }
 });
 
@@ -235,6 +236,15 @@ const drawerInterrupt = document.getElementById("drawer-interrupt");
 let currentTextBlock = null;
 let currentThinkingBlock = null;
 
+function updateInterruptButton() {
+  const card = activeCardId ? cards.get(activeCardId) : null;
+  if (card?.turnActive) {
+    drawerInterrupt.classList.remove("hidden");
+  } else {
+    drawerInterrupt.classList.add("hidden");
+  }
+}
+
 function openDrawer(cardId) {
   activeCardId = cardId;
   flushBlocks();
@@ -259,6 +269,7 @@ function openDrawer(cardId) {
   drawerStream.classList.remove("hidden");
   if (drawerDiffBtn) drawerDiffBtn.textContent = "View diff";
   drawer.classList.remove("hidden");
+  updateInterruptButton();
 
   socket.emit("view_card", { cardId, offset: 0, limit: 50 });
 }
@@ -566,6 +577,11 @@ async function syncBoard() {
         updateCardDom(c);
       }
     });
+    // Update interrupt button if active card changed turnActive state
+    if (activeCardId) {
+      updateInterruptButton();
+    }
+
     // Remove any cards the server no longer knows about
     for (const id of cards.keys()) {
       if (!serverCards.find((c) => c.id === id)) {

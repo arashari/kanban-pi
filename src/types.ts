@@ -11,6 +11,7 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  mergeStrategy?: "local_ff" | "push_branch";
   createdAt: number;
 }
 

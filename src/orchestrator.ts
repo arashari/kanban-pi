@@ -81,9 +81,9 @@ export class Orchestrator {
       if (!card.chatOnly) {
         const project = getProjectById(card.projectId);
         if (!project) throw new Error("Project not found for card");
-        worktreePath = await this.createWorktree(card.id, project);
+        card.branchName = this.generateBranchName(card);
+        worktreePath = await this.createWorktree(card.id, card.branchName, project);
         card.worktreePath = worktreePath;
-        card.branchName = `card/${card.id}`;
         agentCwd = worktreePath;
       } else {
         const project = getProjectById(card.projectId);
@@ -105,6 +105,7 @@ export class Orchestrator {
           sandboxPath: agentCwd,
           repoPath: project?.path,
           projectName: project?.name,
+          branchName: card.branchName,
           onEvent: (event) => this.handleAgentEvent(card.id, event),
           onSubmitChanges: !card.chatOnly
             ? (hash, message, description) => this.handleCommit(card.id, hash, message, description)
@@ -129,38 +130,76 @@ export class Orchestrator {
 
       if (!card.chatOnly && card.branchName && card.commits && card.commits.length > 0) {
         const project = getProjectById(card.projectId);
-        const mergeResult = await this.mergeBranch(card, project);
-        if (mergeResult.error) {
-          card.mergeError = mergeResult.error;
-          card.stage = "conflict";
-          console.log(`[orchestrator] Card ${card.id} merge failed — moved to conflict`);
-          const event: CardEvent = {
-            cardId: card.id,
-            type: "error",
-            error: `Merge failed: ${mergeResult.error}`,
-          };
-          const history = this.eventHistory.get(card.id) || [];
-          history.push(event);
-          this.eventHistory.set(card.id, history);
-          this.io.emit("card_event", event);
-        } else {
-          card.mergeError = undefined;
-          if (card.worktreePath) {
-            try { await execAsync(`git worktree remove --force "${card.worktreePath}"`); } catch {}
-            card.worktreePath = undefined;
-          }
-          try { await execAsync(`git branch -D ${card.branchName}`, { cwd: project?.path }); } catch {}
-          card.branchName = undefined;
+        const strategy = project?.mergeStrategy || "local_ff";
 
-          const event: CardEvent = {
-            cardId: card.id,
-            type: "status",
-            text: `Merged into main: ${mergeResult.stdout || "success"}`,
-          };
-          const history = this.eventHistory.get(card.id) || [];
-          history.push(event);
-          this.eventHistory.set(card.id, history);
-          this.io.emit("card_event", event);
+        if (strategy === "push_branch") {
+          // Push branch to origin instead of merging locally
+          const pushResult = await this.pushBranch(card, project);
+          if (pushResult.error) {
+            card.mergeError = pushResult.error;
+            card.stage = "conflict";
+            console.log(`[orchestrator] Card ${card.id} push failed — moved to conflict`);
+            const event: CardEvent = {
+              cardId: card.id,
+              type: "error",
+              error: `Push failed: ${pushResult.error}`,
+            };
+            const history = this.eventHistory.get(card.id) || [];
+            history.push(event);
+            this.eventHistory.set(card.id, history);
+            this.io.emit("card_event", event);
+          } else {
+            card.mergeError = undefined;
+            if (card.worktreePath) {
+              try { await execAsync(`git worktree remove --force "${card.worktreePath}"`); } catch {}
+              card.worktreePath = undefined;
+            }
+            // Keep branchName on card so the UI can reference it for PR creation
+            const event: CardEvent = {
+              cardId: card.id,
+              type: "status",
+              text: `Branch pushed to origin: ${card.branchName} — create PR on remote`,
+            };
+            const history = this.eventHistory.get(card.id) || [];
+            history.push(event);
+            this.eventHistory.set(card.id, history);
+            this.io.emit("card_event", event);
+          }
+        } else {
+          // Default: local fast-forward merge
+          const mergeResult = await this.mergeBranch(card, project);
+          if (mergeResult.error) {
+            card.mergeError = mergeResult.error;
+            card.stage = "conflict";
+            console.log(`[orchestrator] Card ${card.id} merge failed — moved to conflict`);
+            const event: CardEvent = {
+              cardId: card.id,
+              type: "error",
+              error: `Merge failed: ${mergeResult.error}`,
+            };
+            const history = this.eventHistory.get(card.id) || [];
+            history.push(event);
+            this.eventHistory.set(card.id, history);
+            this.io.emit("card_event", event);
+          } else {
+            card.mergeError = undefined;
+            if (card.worktreePath) {
+              try { await execAsync(`git worktree remove --force "${card.worktreePath}"`); } catch {}
+              card.worktreePath = undefined;
+            }
+            try { await execAsync(`git branch -D ${card.branchName}`, { cwd: project?.path }); } catch {}
+            card.branchName = undefined;
+
+            const event: CardEvent = {
+              cardId: card.id,
+              type: "status",
+              text: `Merged into main: ${mergeResult.stdout || "success"}`,
+            };
+            const history = this.eventHistory.get(card.id) || [];
+            history.push(event);
+            this.eventHistory.set(card.id, history);
+            this.io.emit("card_event", event);
+          }
         }
       }
     }
@@ -280,7 +319,19 @@ export class Orchestrator {
     this.io.emit("card_deleted", { cardId });
   }
 
-  private async createWorktree(cardId: string, project: Project): Promise<string> {
+  private generateBranchName(card: KanbanCard): string {
+    const fixWords = /fix|bug|broken|error|crash|repair|correct|invalid|null|defect|issue|regression/;
+    const prefix = fixWords.test(card.title.toLowerCase()) ? "fix" : "feature";
+    const slug = card.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 30);
+    const suffix = card.id.slice(-4);
+    return `${prefix}/${slug || "card"}-${suffix}`;
+  }
+
+  private async createWorktree(cardId: string, branchName: string, project: Project): Promise<string> {
     const worktreeDir = path.join(project.path, WORKTREE_BASE);
     await fs.promises.mkdir(worktreeDir, { recursive: true });
 
@@ -288,7 +339,6 @@ export class Orchestrator {
     await this.ensureGitignored(project.path, WORKTREE_BASE);
 
     const worktreePath = path.join(worktreeDir, cardId);
-    const branchName = `card/${cardId}`;
 
     // Clean up any stale worktree or leftover directory
     try { await execAsync(`git worktree remove --force "${worktreePath}"`, { cwd: project.path }); } catch { /* ignore */ }
@@ -314,6 +364,24 @@ export class Orchestrator {
     if (lines.some((l) => rx.test(l.trim()))) return;
     const newLine = content.endsWith("\n") || content === "" ? `${pattern}/` : `\n${pattern}/`;
     await fs.promises.writeFile(gitignorePath, content + newLine, "utf-8");
+  }
+
+  private async pushBranch(card: KanbanCard, project?: Project): Promise<{ error?: string; stdout?: string }> {
+    if (!card.branchName) return { error: "No branch to push" };
+    const cwd = project?.path || process.cwd();
+    try {
+      // Rebase the branch onto main in the worktree so history is linear
+      if (card.worktreePath) {
+        await execAsync(`git rebase main`, { cwd: card.worktreePath });
+      }
+      const { stdout, stderr } = await execAsync(`git push origin "${card.branchName}"`, { cwd });
+      return { stdout: stdout || stderr };
+    } catch (err: any) {
+      if (card.worktreePath) {
+        try { await execAsync(`git rebase --abort`, { cwd: card.worktreePath }); } catch {}
+      }
+      return { error: err.stderr || err.stdout || err.message || "Push failed" };
+    }
   }
 
   private async mergeBranch(card: KanbanCard, project?: Project): Promise<{ error?: string; stdout?: string }> {

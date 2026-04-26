@@ -123,6 +123,7 @@ app.post("/api/projects", async (req, res) => {
     id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name,
     path: projectPath,
+    mergeStrategy: req.body.mergeStrategy === "push_branch" ? "push_branch" : "local_ff",
     createdAt: Date.now(),
   });
 

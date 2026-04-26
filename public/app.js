@@ -17,6 +17,7 @@ const projectsModal = document.getElementById("projects-modal");
 const projectsList = document.getElementById("projects-list");
 const projectNameInput = document.getElementById("project-name-input");
 const projectPathInput = document.getElementById("project-path-input");
+const projectMergeStrategy = document.getElementById("project-merge-strategy");
 const projectAddBtn = document.getElementById("project-add-btn");
 const projectAddError = document.getElementById("project-add-error");
 const projectsCloseBtn = document.getElementById("projects-close-btn");
@@ -85,9 +86,10 @@ function renderProjectsList() {
   for (const p of projects) {
     const div = document.createElement("div");
     div.className = "project-item";
+    const strategyLabel = p.mergeStrategy === "push_branch" ? "🔄 PR workflow" : "🔄 FF merge";
     div.innerHTML = `
       <div>
-        <div class="project-item-name">${escapeHtml(p.name)}</div>
+        <div class="project-item-name">${escapeHtml(p.name)} <span class="project-item-strategy">${strategyLabel}</span></div>
         <div class="project-item-path">${escapeHtml(p.path)}</div>
       </div>
       ${p.id !== 'default' ? `<button class="project-item-delete" data-id="${p.id}">Delete</button>` : ''}
@@ -116,6 +118,7 @@ function renderProjectsList() {
 projectAddBtn.addEventListener("click", async () => {
   const name = projectNameInput.value.trim();
   const path = projectPathInput.value.trim();
+  const mergeStrategy = projectMergeStrategy.value;
   if (!name || !path) {
     projectAddError.textContent = "Name and path are required";
     projectAddError.classList.remove("hidden");
@@ -128,7 +131,7 @@ projectAddBtn.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ name, path }),
+      body: JSON.stringify({ name, path, mergeStrategy }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -139,6 +142,7 @@ projectAddBtn.addEventListener("click", async () => {
     }
     projectNameInput.value = "";
     projectPathInput.value = "";
+    projectMergeStrategy.value = "local_ff";
     await fetchProjects();
     renderProjectsList();
   } catch (e) {
@@ -170,12 +174,16 @@ function renderCard(card) {
   const stageLabel = card.stage.replace("_", " ");
   const project = projects.find(p => p.id === card.projectId);
   const projectTag = project ? `<div class="card-project">${escapeHtml(project.name)}</div>` : '';
+  const strategyTag = project?.mergeStrategy === 'push_branch'
+    ? `<div class="card-strategy">🔄 PR workflow</div>`
+    : '';
 
   const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
   const showBtn = card.stage !== 'done' && card.stage !== 'conflict';
 
   el.innerHTML = `
     ${projectTag}
+    ${strategyTag}
     <div class="card-title">${card.chatOnly ? '💬 ' : '🔧 '}${escapeHtml(card.title)}</div>
     <div class="card-desc">${escapeHtml(card.description)}</div>
     <span class="card-stage ${card.stage}">${stageLabel}</span>
@@ -258,6 +266,25 @@ function updateCardDom(card) {
     projectTag.textContent = project.name;
   } else if (projectTag) {
     projectTag.remove();
+  }
+
+  // Update strategy tag
+  let strategyTag = el.querySelector('.card-strategy');
+  const newStrategyTagHtml = project?.mergeStrategy === 'push_branch'
+    ? `<div class="card-strategy">🔄 PR workflow</div>`
+    : '';
+  if (newStrategyTagHtml) {
+    if (!strategyTag) {
+      strategyTag = document.createElement('div');
+      strategyTag.className = 'card-strategy';
+      // Insert after project tag or at beginning
+      const firstChild = el.firstChild;
+      if (firstChild) el.insertBefore(strategyTag, firstChild.nextSibling);
+      else el.appendChild(strategyTag);
+    }
+    strategyTag.textContent = '🔄 PR workflow';
+  } else if (strategyTag) {
+    strategyTag.remove();
   }
 
   const indicator = document.getElementById(`indicator-${card.id}`);

@@ -41,6 +41,12 @@ export function loadState(): PersistedState {
     }
     // Backward compat: ensure events exists
     if (!parsed.events) parsed.events = {};
+    // Backward compat: ensure every project has a mergeStrategy
+    if (parsed.projects) {
+      for (const p of parsed.projects) {
+        if (!p.mergeStrategy) p.mergeStrategy = "local_ff";
+      }
+    }
     return parsed;
   } catch {
     const defaultProject: Project = {

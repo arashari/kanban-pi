@@ -77,6 +77,13 @@
         <h4>Add Project</h4>
         <input id="project-name-input" type="text" placeholder="Project name…" />
         <input id="project-path-input" type="text" placeholder="Absolute path to git repo…" />
+        <label class="toggle-label">
+          Merge strategy:
+          <select id="project-merge-strategy" class="project-select">
+            <option value="local_ff">Fast-forward merge locally</option>
+            <option value="push_branch">Push branch to origin (PR workflow)</option>
+          </select>
+        </label>
         <div id="project-add-error" class="project-add-error hidden"></div>
         <button id="project-add-btn" class="btn">Add</button>
       </div>

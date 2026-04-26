@@ -17,6 +17,7 @@ export interface CardAgentOptions {
   sandboxPath?: string;
   repoPath?: string;
   projectName?: string;
+  branchName?: string;
   onEvent: (event: CardEvent) => void;
   onSubmitChanges?: (hash: string, message: string, description?: string) => Promise<void>;
 }
@@ -35,6 +36,7 @@ export class CardAgent {
   private sandboxPath?: string;
   private repoPath?: string;
   private projectName?: string;
+  private branchName?: string;
   private disposed = false;
 
   constructor(
@@ -53,6 +55,7 @@ export class CardAgent {
     this.sandboxPath = opts.sandboxPath;
     this.repoPath = opts.repoPath;
     this.projectName = opts.projectName;
+    this.branchName = opts.branchName;
   }
 
   async init() {
@@ -216,7 +219,7 @@ export class CardAgent {
         `You are working on an implementation task in an isolated environment.\n\n` +
         `=== WORKSPACE ISOLATION ===\n` +
         `You are in a git worktree at: ${this.worktreePath}\n` +
-        `This is an isolated branch: card/${this.cardId}\n` +
+        `This is an isolated branch: ${this.branchName || "card/" + this.cardId}\n` +
         `Your changes will NOT affect the main codebase until reviewed and merged.\n` +
         `All file edits are safe — you cannot corrupt the main branch.\n\n` +
         `=== PROJECT ===\n` +

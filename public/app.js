@@ -15,6 +15,9 @@ function renderCard(card) {
 
   const stageLabel = card.stage.replace("_", " ");
 
+  const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
+  const showBtn = card.stage !== 'done' && card.stage !== 'conflict';
+
   el.innerHTML = `
     <div class="card-title">${card.chatOnly ? '💬 ' : '🔧 '}${escapeHtml(card.title)}</div>
     <div class="card-desc">${escapeHtml(card.description)}</div>
@@ -22,9 +25,7 @@ function renderCard(card) {
     <div class="card-indicator" id="indicator-${card.id}">
       ${card.turnActive ? '<div class="spinner"></div><span>Running…</span>' : ""}
     </div>
-    <div class="card-actions">
-      <button class="btn-done" data-action="done">✅ Done</button>
-    </div>
+    ${showBtn ? `<div class="card-actions"><button class="btn-done" data-action="done">${btnLabel}</button></div>` : ''}
   `;
 
   el.addEventListener("dragstart", (e) => {
@@ -75,6 +76,30 @@ function updateCardDom(card) {
       indicator.innerHTML = '<div class="spinner"></div><span>Running…</span>';
     } else {
       indicator.innerHTML = "";
+    }
+  }
+
+  // Update or remove the action button based on stage
+  let actionsDiv = el.querySelector('.card-actions');
+  const showBtn = card.stage !== 'done' && card.stage !== 'conflict';
+  if (!showBtn && actionsDiv) {
+    actionsDiv.remove();
+  } else if (showBtn) {
+    const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
+    if (!actionsDiv) {
+      actionsDiv = document.createElement('div');
+      actionsDiv.className = 'card-actions';
+      actionsDiv.innerHTML = `<button class="btn-done" data-action="done">${btnLabel}</button>`;
+      el.appendChild(actionsDiv);
+      actionsDiv.querySelector('.btn-done').addEventListener('click', (e) => {
+        e.stopPropagation();
+        socket.emit('move_card', { cardId: card.id, stage: 'done' });
+      });
+    } else {
+      const btn = actionsDiv.querySelector('.btn-done');
+      if (btn && btn.textContent !== btnLabel) {
+        btn.textContent = btnLabel;
+      }
     }
   }
 }

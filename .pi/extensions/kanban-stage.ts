@@ -18,20 +18,20 @@ export default function (pi: ExtensionAPI) {
       "The user is actively watching a Kanban board. Each card moves through columns:\n" +
       "- planning   → you are analyzing the task and thinking about the approach\n" +
       "- in_progress → you are actively implementing (reading files, writing code, running commands)\n" +
-      "- in_review   → you have finished and the user should review your work\n" +
-      "- done       → the task is completely finished\n\n" +
+      "- in_review   → you have finished your work. The user will review and merge it.\n" +
+      "- done        → the task has been merged. Do NOT move here yourself.\n\n" +
       "WHEN to call this tool:\n" +
       "1. IMMEDIATELY when you start a new phase (e.g., right before you open a file or start writing code)\n" +
       "2. When you switch from thinking to doing, or from doing to reviewing\n" +
       "3. Before any significant action so the user knows what you're about to do\n" +
-      "4. When you finish the task and the result is ready for the user\n\n" +
+      "4. When you finish the task call update_kanban_stage with stage 'in_review' — the human will move it to 'done' after merging.\n\n" +
       "Always provide a brief reason explaining what you are doing.",
     parameters: Type.Object({
       stage: Type.Union([
         Type.Literal("planning", { description: "Analyzing the task and planning the approach" }),
         Type.Literal("in_progress", { description: "Actively implementing (writing code, running commands, etc.)" }),
-        Type.Literal("in_review", { description: "Finished — user should review the result" }),
-        Type.Literal("done", { description: "Task is completely finished" }),
+        Type.Literal("in_review", { description: "Finished — user will review and merge your work. Call this when you commit your changes." }),
+        Type.Literal("done", { description: "Task is completely finished and merged. Do NOT call this yourself — the human moves the card here." }),
       ]),
       reason: Type.String({
         description: "A brief explanation of what you are doing and why the stage changed. Keep it to one sentence.",

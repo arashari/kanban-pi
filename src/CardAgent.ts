@@ -218,7 +218,9 @@ export class CardAgent {
         `Use update_kanban_stage to report your current phase.\n` +
         `Use create_kanban_card if the user wants a new implementation task.\n` +
         `Use submit_worktree_changes({ message, description }) to commit your work\n` +
-        `when it is ready for review. You may commit multiple times.\n\n` +
+        `when it is ready for review. You may commit multiple times.\n` +
+        `When your implementation is ready for review, call update_kanban_stage with stage "in_review".\n` +
+        `Do NOT call "done" yourself — the human will move the card to "done" after merging.\n\n` +
         `=== PLANNING PHASE — ASK IF UNSURE ===\n` +
         `Before you create any files, think about whether the user's intent is clear.\n` +
         `If the title or description is ambiguous, DO NOT guess. Ask the user.\n\n` +

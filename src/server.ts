@@ -205,6 +205,18 @@ app.post("/internal/card-commit", (req, res) => {
   res.json({ received: ok });
 });
 
+// Internal endpoint for creating cards from an agent session
+app.post("/internal/cards", (req, res) => {
+  const { sessionId, title, description, chatOnly } = req.body;
+  if (!sessionId || !title) {
+    return res.status(400).json({ received: false, error: "Missing sessionId or title" });
+  }
+  const projectId = orchestrator.findProjectIdBySessionId(sessionId);
+  const payload: CreateCardPayload = { title, description, chatOnly, projectId };
+  const card = orchestrator.createCard(payload);
+  res.json({ received: true, card });
+});
+
 // ─── Socket.io ─────────────────────────────────────────────
 
 io.on("connection", (socket) => {

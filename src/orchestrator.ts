@@ -331,6 +331,13 @@ export class Orchestrator {
     return undefined;
   }
 
+  findProjectIdBySessionId(sessionId: string): string | undefined {
+    const cardId = this.findCardIdBySessionId(sessionId);
+    if (!cardId) return undefined;
+    const card = this.cards.get(cardId);
+    return card?.projectId;
+  }
+
   updateCardStageBySession(sessionId: string, stage: CardStage, reason?: string): boolean {
     const cardId = this.findCardIdBySessionId(sessionId);
     if (!cardId) return false;

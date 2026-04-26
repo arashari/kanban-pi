@@ -29,16 +29,25 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
-        const resp = await fetch("http://localhost:3456/api/cards", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: params.title,
-            description: params.description,
-          }),
-        });
+        const sessionId = (ctx as any)?.sessionManager?.getSessionId?.();
+
+        const resp = await fetch(
+          sessionId
+            ? "http://localhost:3456/internal/cards"
+            : "http://localhost:3456/api/cards",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              sessionId
+                ? { sessionId, title: params.title, description: params.description }
+                : { title: params.title, description: params.description }
+            ),
+          }
+        );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const card = await resp.json();
+        const data = await resp.json();
+        const card = sessionId ? data.card : data;
         return {
           content: [
             {

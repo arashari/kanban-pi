@@ -227,10 +227,18 @@ export class Orchestrator {
   private async mergeBranch(card: KanbanCard): Promise<{ error?: string; stdout?: string }> {
     if (!card.branchName) return { error: "No branch to merge" };
     try {
-      const { stdout, stderr } = await execAsync(`git merge --no-edit "${card.branchName}"`, { cwd: process.cwd() });
+      // Rebase the branch onto main in the worktree so history is linear
+      if (card.worktreePath) {
+        await execAsync(`git rebase main`, { cwd: card.worktreePath });
+      }
+      const { stdout, stderr } = await execAsync(`git merge --ff-only "${card.branchName}"`, { cwd: process.cwd() });
       return { stdout: stdout || stderr };
     } catch (err: any) {
-      // Attempt to abort the failed merge so the repo isn't left in a dirty state
+      // Attempt to abort the failed rebase so the branch isn't left in a dirty state
+      if (card.worktreePath) {
+        try { await execAsync(`git rebase --abort`, { cwd: card.worktreePath }); } catch {}
+      }
+      // Attempt to abort any failed merge
       try { await execAsync(`git merge --abort`, { cwd: process.cwd() }); } catch {}
       return { error: err.stderr || err.stdout || err.message || "Merge failed" };
     }

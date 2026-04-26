@@ -428,6 +428,12 @@ body {
   border-radius: 4px;
 }
 
+.stream .user-message.interrupt {
+  background: #3f1818;
+  border-color: #7f1d1d;
+  color: #f87171;
+}
+
 .stream .system-status {
   color: #94a3b8;
   font-size: 11px;

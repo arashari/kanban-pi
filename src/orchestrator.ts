@@ -181,6 +181,16 @@ export class Orchestrator {
     const card = this.cards.get(payload.cardId);
     if (!card) throw new Error("Card not found");
 
+    const event: CardEvent = {
+      cardId: card.id,
+      type: "user_message",
+      text: payload.message,
+    };
+    const history = this.eventHistory.get(card.id) || [];
+    history.push(event);
+    this.eventHistory.set(card.id, history);
+    this.io.emit("card_event", event);
+
     const agent = this.agents.get(payload.cardId);
     if (!agent) {
       if (card.stage === "backlog") {
@@ -199,12 +209,34 @@ export class Orchestrator {
   async steerCard(cardId: string, message: string) {
     const agent = this.agents.get(cardId);
     if (!agent) throw new Error("No active session for this card");
+
+    const event: CardEvent = {
+      cardId,
+      type: "user_message",
+      text: `Steer: ${message}`,
+    };
+    const history = this.eventHistory.get(cardId) || [];
+    history.push(event);
+    this.eventHistory.set(cardId, history);
+    this.io.emit("card_event", event);
+
     await agent.steer(message);
   }
 
   async interruptCard(cardId: string) {
     const agent = this.agents.get(cardId);
     if (!agent) throw new Error("No active session for this card");
+
+    const event: CardEvent = {
+      cardId,
+      type: "interrupt",
+      text: "⏹ Interrupted by user",
+    };
+    const history = this.eventHistory.get(cardId) || [];
+    history.push(event);
+    this.eventHistory.set(cardId, history);
+    this.io.emit("card_event", event);
+
     await agent.abort();
   }
 

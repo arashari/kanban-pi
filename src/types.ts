@@ -49,7 +49,9 @@ export interface CardEvent {
     | "message_complete"
     | "error"
     | "status"
-    | "commit";
+    | "commit"
+    | "user_message"
+    | "interrupt";
   stage?: CardStage;
   text?: string;
   toolName?: string;

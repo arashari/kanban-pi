@@ -691,6 +691,24 @@ function appendToDrawer(event, container = drawerStream) {
       break;
     }
 
+    case "user_message": {
+      flushBlocks();
+      const el = document.createElement("div");
+      el.className = "user-message";
+      el.textContent = `👤 ${event.text}`;
+      container.appendChild(el);
+      break;
+    }
+
+    case "interrupt": {
+      flushBlocks();
+      const el = document.createElement("div");
+      el.className = "user-message interrupt";
+      el.textContent = `⏹ ${event.text}`;
+      container.appendChild(el);
+      break;
+    }
+
     case "stage_change": {
       flushBlocks();
       const el = document.createElement("div");

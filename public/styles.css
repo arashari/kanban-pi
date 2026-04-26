@@ -499,3 +499,7 @@ body {
   display: none;
 }
 
+#drawer-interrupt.hidden {
+  display: none;
+}
+

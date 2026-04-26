@@ -10,7 +10,13 @@
 <body>
   <header class="header">
     <h1>🦀 Kanban Pi</h1>
-    <button id="new-card-btn" class="btn">🐱 New Card</button>
+    <div class="header-actions">
+      <select id="project-select" class="project-select">
+        <option value="">Select project…</option>
+      </select>
+      <button id="manage-projects-btn" class="btn btn-secondary">⚙️ Projects</button>
+      <button id="new-card-btn" class="btn">🐱 New Card</button>
+    </div>
   </header>
 
   <main class="board">
@@ -48,7 +54,8 @@
   <div id="modal" class="modal hidden">
     <div class="modal-content">
       <h3>Create New Card</h3>
-      <input id="card-title" type="text" placeholder="Card title..." />
+      <div id="modal-project-name" class="modal-project-name"></div>
+      <input id="card-title" type="text" placeholder="Card title…" />
       <textarea id="card-desc" rows="4" placeholder="What should the agent do?"></textarea>
       <label class="toggle-label">
         <input type="checkbox" id="card-chat-only" />
@@ -57,6 +64,24 @@
       <div class="modal-actions">
         <button id="cancel-btn" class="btn-secondary">Cancel</button>
         <button id="create-btn" class="btn">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Projects Modal -->
+  <div id="projects-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Manage Projects</h3>
+      <div id="projects-list" class="projects-list"></div>
+      <div class="project-add">
+        <h4>Add Project</h4>
+        <input id="project-name-input" type="text" placeholder="Project name…" />
+        <input id="project-path-input" type="text" placeholder="Absolute path to git repo…" />
+        <div id="project-add-error" class="project-add-error hidden"></div>
+        <button id="project-add-btn" class="btn">Add</button>
+      </div>
+      <div class="modal-actions">
+        <button id="projects-close-btn" class="btn-secondary">Close</button>
       </div>
     </div>
   </div>
@@ -81,7 +106,7 @@
       <button id="jump-to-latest" class="jump-to-latest hidden">⬇ Jump to latest</button>
     </div>
     <div class="drawer-footer">
-      <input id="drawer-input" type="text" placeholder="Steer the agent..." />
+      <input id="drawer-input" type="text" placeholder="Steer the agent…" />
       <button id="drawer-interrupt" class="btn btn-danger">⏹ Interrupt</button>
       <button id="drawer-send" class="btn">Send</button>
     </div>

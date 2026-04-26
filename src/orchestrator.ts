@@ -12,7 +12,9 @@ import type {
   PromptCardPayload,
   CardEvent,
   CommitInfo,
+  Project,
 } from "./types.js";
+import { loadState, saveState, getProjectById, getProjects } from "./store.js";
 
 const execAsync = promisify(exec);
 const WORKTREE_BASE = ".kanban-worktrees";
@@ -25,21 +27,36 @@ export class Orchestrator {
 
   constructor(io: SocketServer) {
     this.io = io;
+    // Restore persisted cards
+    const state = loadState();
+    for (const card of state.cards) {
+      this.cards.set(card.id, card);
+      this.eventHistory.set(card.id, []);
+    }
+  }
+
+  getProjects(): Project[] {
+    return getProjects();
   }
 
   createCard(payload: CreateCardPayload): KanbanCard {
     const id = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const projectId = payload.projectId && getProjectById(payload.projectId)
+      ? payload.projectId
+      : "default";
     const card: KanbanCard = {
       id,
       title: payload.title,
       description: payload.description,
       stage: "backlog",
       chatOnly: payload.chatOnly,
+      projectId,
       turnActive: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     this.cards.set(id, card);
+    this.persistCards();
     this.broadcastCardUpdate(card);
     return card;
   }
@@ -57,7 +74,9 @@ export class Orchestrator {
       let worktreePath: string | undefined;
 
       if (!card.chatOnly) {
-        worktreePath = await this.createWorktree(card.id);
+        const project = getProjectById(card.projectId);
+        if (!project) throw new Error("Project not found for card");
+        worktreePath = await this.createWorktree(card.id, project);
         card.worktreePath = worktreePath;
         card.branchName = `card/${card.id}`;
         agentCwd = worktreePath;
@@ -65,6 +84,8 @@ export class Orchestrator {
         agentCwd = `/tmp/.kanban-chat-${card.id}`;
         await fs.promises.mkdir(agentCwd, { recursive: true });
       }
+
+      const project = getProjectById(card.projectId);
 
       const agent = new CardAgent(
         card.id,
@@ -74,6 +95,8 @@ export class Orchestrator {
           chatOnly: card.chatOnly,
           worktreePath,
           sandboxPath: agentCwd,
+          repoPath: project?.path,
+          projectName: project?.name,
           onEvent: (event) => this.handleAgentEvent(card.id, event),
           onSubmitChanges: !card.chatOnly
             ? (hash, message, description) => this.handleCommit(card.id, hash, message, description)
@@ -83,6 +106,7 @@ export class Orchestrator {
       this.agents.set(card.id, agent);
       await agent.init();
       card.sessionId = agent.sessionId;
+      this.persistCards();
       this.broadcastCardUpdate(card);
       await agent.start();
     }
@@ -96,7 +120,8 @@ export class Orchestrator {
       card.turnActive = false;
 
       if (!card.chatOnly && card.branchName && card.commits && card.commits.length > 0) {
-        const mergeResult = await this.mergeBranch(card);
+        const project = getProjectById(card.projectId);
+        const mergeResult = await this.mergeBranch(card, project);
         if (mergeResult.error) {
           card.mergeError = mergeResult.error;
           card.stage = "conflict";
@@ -116,7 +141,7 @@ export class Orchestrator {
             try { await execAsync(`git worktree remove --force "${card.worktreePath}"`); } catch {}
             card.worktreePath = undefined;
           }
-          try { await execAsync(`git branch -D ${card.branchName}`); } catch {}
+          try { await execAsync(`git branch -D ${card.branchName}`, { cwd: project?.path }); } catch {}
           card.branchName = undefined;
 
           const event: CardEvent = {
@@ -140,6 +165,7 @@ export class Orchestrator {
       }
     }
 
+    this.persistCards();
     this.broadcastCardUpdate(card);
   }
 
@@ -185,7 +211,8 @@ export class Orchestrator {
       }
       try {
         if (card.branchName) {
-          await execAsync(`git branch -D ${card.branchName}`);
+          const project = getProjectById(card.projectId);
+          await execAsync(`git branch -D ${card.branchName}`, { cwd: project?.path });
         }
       } catch {
         // Branch may already be gone
@@ -205,33 +232,55 @@ export class Orchestrator {
     }
     this.cards.delete(cardId);
     this.eventHistory.delete(cardId);
+    this.persistCards();
     this.io.emit("card_deleted", { cardId });
   }
 
-  private async createWorktree(cardId: string): Promise<string> {
-    const worktreePath = path.join(process.cwd(), WORKTREE_BASE, cardId);
+  private async createWorktree(cardId: string, project: Project): Promise<string> {
+    const worktreeDir = path.join(project.path, WORKTREE_BASE);
+    await fs.promises.mkdir(worktreeDir, { recursive: true });
+
+    // Ensure worktree dir is gitignored in the project repo
+    await this.ensureGitignored(project.path, WORKTREE_BASE);
+
+    const worktreePath = path.join(worktreeDir, cardId);
     const branchName = `card/${cardId}`;
 
-    await fs.promises.mkdir(path.join(process.cwd(), WORKTREE_BASE), { recursive: true });
-
     // Clean up any stale worktree or leftover directory
-    try { await execAsync(`git worktree remove --force "${worktreePath}"`); } catch { /* ignore */ }
+    try { await execAsync(`git worktree remove --force "${worktreePath}"`, { cwd: project.path }); } catch { /* ignore */ }
     try { await fs.promises.rm(worktreePath, { recursive: true, force: true }); } catch { /* ignore */ }
-    try { await execAsync(`git branch -D ${branchName}`); } catch { /* ignore */ }
+    try { await execAsync(`git branch -D ${branchName}`, { cwd: project.path }); } catch { /* ignore */ }
 
-    await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" HEAD`, { cwd: process.cwd() });
+    await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" HEAD`, { cwd: project.path });
 
     return worktreePath;
   }
 
-  private async mergeBranch(card: KanbanCard): Promise<{ error?: string; stdout?: string }> {
+  private async ensureGitignored(repoPath: string, pattern: string) {
+    const gitignorePath = path.join(repoPath, ".gitignore");
+    let content = "";
+    try {
+      content = await fs.promises.readFile(gitignorePath, "utf-8");
+    } catch {
+      // .gitignore may not exist
+    }
+    const lines = content.split("\n");
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(`^${escaped}/?$`);
+    if (lines.some((l) => rx.test(l.trim()))) return;
+    const newLine = content.endsWith("\n") || content === "" ? `${pattern}/` : `\n${pattern}/`;
+    await fs.promises.writeFile(gitignorePath, content + newLine, "utf-8");
+  }
+
+  private async mergeBranch(card: KanbanCard, project?: Project): Promise<{ error?: string; stdout?: string }> {
     if (!card.branchName) return { error: "No branch to merge" };
+    const cwd = project?.path || process.cwd();
     try {
       // Rebase the branch onto main in the worktree so history is linear
       if (card.worktreePath) {
         await execAsync(`git rebase main`, { cwd: card.worktreePath });
       }
-      const { stdout, stderr } = await execAsync(`git merge --ff-only "${card.branchName}"`, { cwd: process.cwd() });
+      const { stdout, stderr } = await execAsync(`git merge --ff-only "${card.branchName}"`, { cwd });
       return { stdout: stdout || stderr };
     } catch (err: any) {
       // Attempt to abort the failed rebase so the branch isn't left in a dirty state
@@ -239,7 +288,7 @@ export class Orchestrator {
         try { await execAsync(`git rebase --abort`, { cwd: card.worktreePath }); } catch {}
       }
       // Attempt to abort any failed merge
-      try { await execAsync(`git merge --abort`, { cwd: process.cwd() }); } catch {}
+      try { await execAsync(`git merge --abort`, { cwd }); } catch {}
       return { error: err.stderr || err.stdout || err.message || "Merge failed" };
     }
   }
@@ -251,6 +300,7 @@ export class Orchestrator {
     const commit: CommitInfo = { hash, message, description, date: Date.now() };
     card.commits.push(commit);
     card.updatedAt = Date.now();
+    this.persistCards();
     this.broadcastCardUpdate(card);
 
     const event: CardEvent = {
@@ -305,6 +355,7 @@ export class Orchestrator {
     history.push(event);
     this.eventHistory.set(cardId, history);
 
+    this.persistCards();
     this.broadcastCardUpdate(card);
     this.io.emit("card_event", event);
     return true;
@@ -322,6 +373,12 @@ export class Orchestrator {
 
   getAllCards(): KanbanCard[] {
     return Array.from(this.cards.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getCardsByProject(projectId: string): KanbanCard[] {
+    return Array.from(this.cards.values())
+      .filter((c) => c.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
 
   getCardHistory(cardId: string, offset = 0, limit = 50): { events: CardEvent[]; total: number; hasMore: boolean } {
@@ -352,6 +409,7 @@ export class Orchestrator {
       card.stage = event.stage;
       card.updatedAt = Date.now();
       console.log(`[orchestrator] Card ${cardId} moved: ${prev} → ${event.stage} (agent)`);
+      this.persistCards();
       this.broadcastCardUpdate(card);
     }
 
@@ -360,5 +418,9 @@ export class Orchestrator {
 
   private broadcastCardUpdate(card: KanbanCard) {
     this.io.emit("card_update", card);
+  }
+
+  private persistCards() {
+    saveState({ projects: getProjects(), cards: this.getAllCards() });
   }
 }

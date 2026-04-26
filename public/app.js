@@ -3,10 +3,161 @@ const BLOCKED_STAGES = ['planning', 'in_progress', 'in_review', 'conflict'];
 
 const socket = io({ withCredentials: true });
 const cards = new Map();
+let projects = [];
+let activeProjectId = null;
 let activeCardId = null;
 let programmaticScroll = false;
 let drawerHistory = { offset: 0, total: 0, hasMore: false, loading: false };
 const loaderEl = document.getElementById("drawer-loader");
+
+// ─── Projects ────────────────────────────────────────
+const projectSelect = document.getElementById("project-select");
+const manageProjectsBtn = document.getElementById("manage-projects-btn");
+const projectsModal = document.getElementById("projects-modal");
+const projectsList = document.getElementById("projects-list");
+const projectNameInput = document.getElementById("project-name-input");
+const projectPathInput = document.getElementById("project-path-input");
+const projectAddBtn = document.getElementById("project-add-btn");
+const projectAddError = document.getElementById("project-add-error");
+const projectsCloseBtn = document.getElementById("projects-close-btn");
+const modalProjectName = document.getElementById("modal-project-name");
+
+async function fetchProjects() {
+  try {
+    const res = await fetch("/api/projects", { credentials: "include" });
+    if (!res.ok) return;
+    projects = await res.json();
+    populateProjectSelect();
+    // If activeProjectId is invalid, reset to default
+    if (!projects.find(p => p.id === activeProjectId)) {
+      activeProjectId = projects[0]?.id || null;
+    }
+    if (activeProjectId) {
+      projectSelect.value = activeProjectId;
+      await syncBoard();
+    }
+  } catch (_e) {
+    // ignore
+  }
+}
+
+function populateProjectSelect() {
+  projectSelect.innerHTML = '';
+  for (const p of projects) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    projectSelect.appendChild(opt);
+  }
+}
+
+function getActiveProject() {
+  return projects.find(p => p.id === activeProjectId);
+}
+
+projectSelect.addEventListener("change", () => {
+  activeProjectId = projectSelect.value;
+  // Re-render board for selected project
+  document.querySelectorAll('.dropzone').forEach(z => z.innerHTML = '');
+  for (const card of cards.values()) {
+    if (card.projectId === activeProjectId) {
+      placeCard(card);
+    }
+  }
+  syncBoard();
+});
+
+manageProjectsBtn.addEventListener("click", () => {
+  renderProjectsList();
+  projectsModal.classList.remove("hidden");
+});
+
+projectsCloseBtn.addEventListener("click", () => {
+  projectsModal.classList.add("hidden");
+  projectNameInput.value = "";
+  projectPathInput.value = "";
+  projectAddError.classList.add("hidden");
+  projectAddError.textContent = "";
+});
+
+function renderProjectsList() {
+  projectsList.innerHTML = "";
+  for (const p of projects) {
+    const div = document.createElement("div");
+    div.className = "project-item";
+    div.innerHTML = `
+      <div>
+        <div class="project-item-name">${escapeHtml(p.name)}</div>
+        <div class="project-item-path">${escapeHtml(p.path)}</div>
+      </div>
+      ${p.id !== 'default' ? `<button class="project-item-delete" data-id="${p.id}">Delete</button>` : ''}
+    `;
+    const delBtn = div.querySelector('.project-item-delete');
+    if (delBtn) {
+      delBtn.addEventListener('click', async () => {
+        try {
+          const res = await fetch(`/api/projects/${p.id}`, { method: "DELETE", credentials: "include" });
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error || "Failed to delete project");
+            return;
+          }
+          await fetchProjects();
+          renderProjectsList();
+        } catch (e) {
+          alert(String(e));
+        }
+      });
+    }
+    projectsList.appendChild(div);
+  }
+}
+
+projectAddBtn.addEventListener("click", async () => {
+  const name = projectNameInput.value.trim();
+  const path = projectPathInput.value.trim();
+  if (!name || !path) {
+    projectAddError.textContent = "Name and path are required";
+    projectAddError.classList.remove("hidden");
+    return;
+  }
+  projectAddError.classList.add("hidden");
+  projectAddBtn.disabled = true;
+  try {
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name, path }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      projectAddError.textContent = data.error || "Failed to add project";
+      projectAddError.classList.remove("hidden");
+      projectAddBtn.disabled = false;
+      return;
+    }
+    projectNameInput.value = "";
+    projectPathInput.value = "";
+    await fetchProjects();
+    renderProjectsList();
+  } catch (e) {
+    projectAddError.textContent = String(e);
+    projectAddError.classList.remove("hidden");
+  } finally {
+    projectAddBtn.disabled = false;
+  }
+});
+
+socket.on("projects_updated", (updatedProjects) => {
+  projects = updatedProjects;
+  populateProjectSelect();
+  if (!projects.find(p => p.id === activeProjectId)) {
+    activeProjectId = projects[0]?.id || null;
+    if (activeProjectId) projectSelect.value = activeProjectId;
+    syncBoard();
+  }
+});
 
 // ─── Render ─────────────────────────────────────────
 function renderCard(card) {
@@ -17,11 +168,14 @@ function renderCard(card) {
   el.dataset.stage = card.stage;
 
   const stageLabel = card.stage.replace("_", " ");
+  const project = projects.find(p => p.id === card.projectId);
+  const projectTag = project ? `<div class="card-project">${escapeHtml(project.name)}</div>` : '';
 
   const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
   const showBtn = card.stage !== 'done' && card.stage !== 'conflict';
 
   el.innerHTML = `
+    ${projectTag}
     <div class="card-title">${card.chatOnly ? '💬 ' : '🔧 '}${escapeHtml(card.title)}</div>
     <div class="card-desc">${escapeHtml(card.description)}</div>
     <span class="card-stage ${card.stage}">${stageLabel}</span>
@@ -55,10 +209,19 @@ function renderCard(card) {
 
 function updateCardDom(card) {
   let el = document.getElementById(card.id);
+  const project = projects.find(p => p.id === card.projectId);
+
   if (!el) {
+    if (card.projectId !== activeProjectId) return;
     el = renderCard(card);
     const zone = document.getElementById("col-" + card.stage);
     if (zone) zone.appendChild(el);
+    return;
+  }
+
+  // If card moved to a different project, remove it
+  if (card.projectId !== activeProjectId) {
+    el.remove();
     return;
   }
 
@@ -72,6 +235,20 @@ function updateCardDom(card) {
   const badge = el.querySelector(".card-stage");
   badge.className = `card-stage ${card.stage}`;
   badge.textContent = card.stage.replace("_", " ");
+
+  // Update project tag
+  let projectTag = el.querySelector('.card-project');
+  const newProjectTagHtml = project ? `<div class="card-project">${escapeHtml(project.name)}</div>` : '';
+  if (newProjectTagHtml) {
+    if (!projectTag) {
+      projectTag = document.createElement('div');
+      projectTag.className = 'card-project';
+      el.insertBefore(projectTag, el.firstChild);
+    }
+    projectTag.textContent = project.name;
+  } else if (projectTag) {
+    projectTag.remove();
+  }
 
   const indicator = document.getElementById(`indicator-${card.id}`);
   if (indicator) {
@@ -148,10 +325,10 @@ socket.on("board_state", (boardCards) => {
     const existing = cards.get(c.id);
     cards.set(c.id, c);
     if (!existing) {
-      placeCard(c);
-    } else if (existing.stage !== c.stage) {
+      if (c.projectId === activeProjectId) placeCard(c);
+    } else if (existing.stage !== c.stage || existing.projectId !== c.projectId) {
       removeCardDom(c.id);
-      placeCard(c);
+      if (c.projectId === activeProjectId) placeCard(c);
     } else {
       updateCardDom(c);
     }
@@ -162,16 +339,17 @@ socket.on("card_update", (card) => {
   const existing = cards.get(card.id);
   cards.set(card.id, card);
   if (!existing) {
-    placeCard(card);
-  } else if (existing.stage !== card.stage) {
+    if (card.projectId === activeProjectId) placeCard(card);
+  } else if (existing.stage !== card.stage || existing.projectId !== card.projectId) {
     removeCardDom(card.id);
-    placeCard(card);
+    if (card.projectId === activeProjectId) placeCard(card);
   } else {
     updateCardDom(card);
   }
-  // If this card is open, refresh its meta line and interrupt button
   if (activeCardId === card.id) {
+    const project = projects.find(p => p.id === card.projectId);
     let meta = `${card.stage.replace("_", " ").toUpperCase()}`;
+    if (project) meta += ` · 📁 ${project.name}`;
     if (card.chatOnly) meta += " · 💬 Chat only";
     if (card.branchName) meta += ` · 🌿 ${card.branchName}`;
     if (card.commits?.length) {
@@ -221,6 +399,12 @@ const titleInput = document.getElementById("card-title");
 const descInput = document.getElementById("card-desc");
 
 newBtn.addEventListener("click", () => {
+  const project = getActiveProject();
+  if (project) {
+    modalProjectName.textContent = `Project: ${project.name}`;
+  } else {
+    modalProjectName.textContent = "";
+  }
   modal.classList.remove("hidden");
   titleInput.focus();
 });
@@ -235,16 +419,14 @@ createBtn.addEventListener("click", () => {
   const title = titleInput.value.trim();
   const description = descInput.value.trim();
   const chatOnly = document.getElementById("card-chat-only")?.checked || false;
+  const projectId = activeProjectId;
 
   if (!title) return;
+  if (!projectId) return;
 
-  // Disable to prevent double-clicks
   createBtn.disabled = true;
 
-  socket.emit("create_card", { title, description, chatOnly }, (card) => {
-    // DO NOT add the card here — card_update from the server is the
-    // single source of truth for DOM insertion. Close the modal and
-    // let the broadcast handler place the card.
+  socket.emit("create_card", { title, description, chatOnly, projectId }, (card) => {
     modal.classList.add("hidden");
     titleInput.value = "";
     descInput.value = "";
@@ -283,9 +465,11 @@ function openDrawer(cardId) {
   drawerHistory = { offset: 0, total: 0, hasMore: false, loading: false };
   const card = cards.get(cardId);
   if (!card) return;
+  const project = projects.find(p => p.id === card.projectId);
 
   drawerTitle.textContent = card.title;
   let meta = `${card.stage.replace("_", " ").toUpperCase()}`;
+  if (project) meta += ` · 📁 ${project.name}`;
   if (card.chatOnly) meta += " · 💬 Chat only";
   if (card.branchName) meta += ` · 🌿 ${card.branchName}`;
   if (card.commits?.length) {
@@ -401,9 +585,6 @@ function checkAutoLoad() {
 
 function checkFill() {
   if (!activeCardId || !drawerHistory.hasMore || drawerHistory.loading) return;
-  // If the stream content doesn't overflow, the user can't scroll up.
-  // Load the next older chunk automatically until content overflows
-  // or we run out of history.
   if (drawerStream.scrollHeight <= drawerStream.clientHeight + 2) {
     drawerHistory.loading = true;
     loaderEl?.classList.remove("hidden");
@@ -421,7 +602,6 @@ function updateJumpButton() {
   }
 }
 
-// Combine scroll handlers
 function onDrawerScroll() {
   updateJumpButton();
   if (programmaticScroll) return;
@@ -437,7 +617,7 @@ function flushBlocks() {
 function appendToDrawer(event, container = drawerStream) {
   switch (event.type) {
     case "text_delta": {
-      currentThinkingBlock = null; // close thinking block if open
+      currentThinkingBlock = null;
       if (!currentTextBlock) {
         currentTextBlock = document.createElement("p");
         container.appendChild(currentTextBlock);
@@ -550,8 +730,6 @@ socket.on("card_history", ({ cardId, events, total, hasMore, offset }) => {
     drawerStream.innerHTML = "";
     flushBlocks();
     renderHistory(events);
-    // Try to scroll immediately; then again after the browser has
-    // painted, so scrollHeight accounts for the newly rendered nodes.
     scrollToBottom();
     requestAnimationFrame(() => {
       scrollToBottom();
@@ -571,8 +749,6 @@ socket.on("card_history", ({ cardId, events, total, hasMore, offset }) => {
     drawerStream.insertBefore(temp, drawerStream.firstChild);
 
     programmaticScroll = true;
-    // If user was near the top, keep them at top so the newly loaded
-    // older history is visible. Otherwise preserve the reading position.
     if (prevScrollTop < SCROLL_TOP_THRESHOLD) {
       drawerStream.scrollTop = 0;
     } else {
@@ -590,44 +766,46 @@ socket.on("card_history", ({ cardId, events, total, hasMore, offset }) => {
   drawerHistory.offset = offset + events.length;
 });
 
-// ── Periodic sync — orchestrator is source of truth ────
+// ── Periodic sync ────────────────────────────────────
 async function syncBoard() {
   try {
-    const res = await fetch("/api/cards", { credentials: "include" });
+    const url = activeProjectId ? `/api/cards?projectId=${activeProjectId}` : '/api/cards';
+    const res = await fetch(url, { credentials: "include" });
     const serverCards = await res.json();
     serverCards.forEach((c) => {
       const existing = cards.get(c.id);
       if (!existing) {
         cards.set(c.id, c);
-        placeCard(c);
-      } else if (existing.stage !== c.stage) {
+        if (c.projectId === activeProjectId) placeCard(c);
+      } else if (existing.stage !== c.stage || existing.projectId !== c.projectId) {
         cards.set(c.id, c);
         removeCardDom(c.id);
-        placeCard(c);
+        if (c.projectId === activeProjectId) placeCard(c);
       } else {
         cards.set(c.id, c);
         updateCardDom(c);
       }
     });
-    // Update interrupt button if active card changed turnActive state
-    if (activeCardId) {
-      updateInterruptButton();
-    }
-
-    // Remove any cards the server no longer knows about
+    // Remove any cards the server no longer knows about or that moved to another project
     for (const id of cards.keys()) {
-      if (!serverCards.find((c) => c.id === id)) {
+      const serverCard = serverCards.find((c) => c.id === id);
+      if (!serverCard) {
         cards.delete(id);
         removeCardDom(id);
+      } else if (serverCard.projectId !== activeProjectId) {
+        removeCardDom(id);
       }
+    }
+    if (activeCardId) {
+      updateInterruptButton();
     }
   } catch (_e) {
     // ignore network errors
   }
 }
 
-// First sync immediately, then every 3 seconds
-syncBoard();
+// First sync after projects load
+fetchProjects();
 setInterval(syncBoard, 3000);
 
 // ── Interrupt agent ──────────────────────────────────

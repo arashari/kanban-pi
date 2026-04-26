@@ -15,6 +15,8 @@ export interface CardAgentOptions {
   chatOnly?: boolean;
   worktreePath?: string;
   sandboxPath?: string;
+  repoPath?: string;
+  projectName?: string;
   onEvent: (event: CardEvent) => void;
   onSubmitChanges?: (hash: string, message: string, description?: string) => Promise<void>;
 }
@@ -31,6 +33,8 @@ export class CardAgent {
   private chatOnly?: boolean;
   private worktreePath?: string;
   private sandboxPath?: string;
+  private repoPath?: string;
+  private projectName?: string;
   private disposed = false;
 
   constructor(
@@ -47,6 +51,8 @@ export class CardAgent {
     this.chatOnly = opts.chatOnly;
     this.worktreePath = opts.worktreePath;
     this.sandboxPath = opts.sandboxPath;
+    this.repoPath = opts.repoPath;
+    this.projectName = opts.projectName;
   }
 
   async init() {
@@ -208,13 +214,9 @@ export class CardAgent {
         `This is an isolated branch: card/${this.cardId}\n` +
         `Your changes will NOT affect the main codebase until reviewed and merged.\n` +
         `All file edits are safe — you cannot corrupt the main branch.\n\n` +
-        `=== PROJECT ARCHITECTURE ===\n` +
-        `This project has two independent clients:\n` +
-        `• Web client (browser UI): public/app.js, public/index.html, public/styles.css\n` +
-        `• TUI client (terminal UI): src/tui/\n\n` +
-        `RULE: Edit the WEB client by default. Only edit the TUI client if the task\n` +
-        `explicitly says "TUI", "terminal", "console", or "CLI". If the task is generic\n` +
-        `(e.g., "add emoji to new card button"), ALWAYS edit the web client.\n\n` +
+        `=== PROJECT ===\n` +
+        `Project name: ${this.projectName || "unknown"}\n` +
+        `Repository path: ${this.repoPath || this.worktreePath}\n\n` +
         `Use update_kanban_stage to report your current phase.\n` +
         `Use create_kanban_card if the user wants a new implementation task.\n` +
         `Use submit_worktree_changes({ message, description }) to commit your work\n` +

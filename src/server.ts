@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { Orchestrator } from "./orchestrator.js";
+import { getProjects, addProject, removeProject, getProjectById } from "./store.js";
 import type { CreateCardPayload, MoveCardPayload, PromptCardPayload } from "./types.js";
 import fs from "fs";
 import { exec } from "child_process";
@@ -88,8 +89,68 @@ app.get("/api/hello", (_req, res) => {
   res.json({ message: "Hello from Kanban Pi! 👋" });
 });
 
-app.get("/api/cards", (_req, res) => {
-  res.json(orchestrator.getAllCards());
+// ─── Projects ────────────────────────────────────────────
+app.get("/api/projects", (_req, res) => {
+  res.json(orchestrator.getProjects());
+});
+
+app.post("/api/projects", async (req, res) => {
+  const { name, path: projectPath } = req.body;
+  if (!name || !projectPath) {
+    return res.status(400).json({ error: "Missing name or path" });
+  }
+  if (!fs.existsSync(projectPath)) {
+    return res.status(400).json({ error: "Path does not exist" });
+  }
+  const stat = fs.statSync(projectPath);
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ error: "Path is not a directory" });
+  }
+
+  // Validate git repo and at least 1 commit
+  try {
+    await execAsync("git rev-parse --git-dir", { cwd: projectPath });
+  } catch {
+    return res.status(400).json({ error: "Path is not a git repository" });
+  }
+  try {
+    await execAsync("git log --oneline -1", { cwd: projectPath });
+  } catch {
+    return res.status(400).json({ error: "Repository has no commits" });
+  }
+
+  const result = addProject({
+    id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    path: projectPath,
+    createdAt: Date.now(),
+  });
+
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  io.emit("projects_updated", orchestrator.getProjects());
+  res.json({ success: true });
+});
+
+app.delete("/api/projects/:id", (req, res) => {
+  const result = removeProject(req.params.id);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  io.emit("projects_updated", orchestrator.getProjects());
+  res.json({ success: true });
+});
+
+// ─── Cards ─────────────────────────────────────────────────
+app.get("/api/cards", (req, res) => {
+  const projectId = req.query.projectId as string | undefined;
+  if (projectId) {
+    res.json(orchestrator.getCardsByProject(projectId));
+  } else {
+    res.json(orchestrator.getAllCards());
+  }
 });
 
 app.get("/api/cards/:id/diff", async (req, res) => {
@@ -99,7 +160,9 @@ app.get("/api/cards/:id/diff", async (req, res) => {
     return res.status(400).json({ error: "No branch for this card — chat-only or not started" });
   }
   try {
-    const { stdout } = await execAsync(`git diff HEAD...${card.branchName}`, { cwd: process.cwd() });
+    const project = getProjectById(card.projectId);
+    const cwd = project?.path || process.cwd();
+    const { stdout } = await execAsync(`git diff HEAD...${card.branchName}`, { cwd });
     res.json({ diff: stdout });
   } catch (err: any) {
     res.status(500).json({ error: err.stderr || err.message || "Diff failed" });
@@ -146,6 +209,7 @@ app.post("/internal/card-commit", (req, res) => {
 
 io.on("connection", (socket) => {
   socket.emit("board_state", orchestrator.getAllCards());
+  socket.emit("projects_updated", orchestrator.getProjects());
 
   socket.on("create_card", (payload: CreateCardPayload, ack) => {
     const card = orchestrator.createCard(payload);

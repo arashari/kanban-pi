@@ -24,6 +24,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# State
+data/
+
 # Temporary files
 *.tmp
 *.temp

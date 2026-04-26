@@ -7,6 +7,13 @@ export type CardStage =
   | "done"
   | "conflict";
 
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  createdAt: number;
+}
+
 export interface CommitInfo {
   hash: string;
   message: string;
@@ -20,6 +27,7 @@ export interface KanbanCard {
   description: string;
   stage: CardStage;
   chatOnly?: boolean;
+  projectId: string;
   worktreePath?: string;
   branchName?: string;
   commits?: CommitInfo[];
@@ -56,6 +64,7 @@ export interface CreateCardPayload {
   title: string;
   description: string;
   chatOnly?: boolean;
+  projectId?: string;
 }
 
 export interface MoveCardPayload {

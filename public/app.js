@@ -1,3 +1,6 @@
+// Stages that humans cannot move a card INTO (agent-only)
+const BLOCKED_STAGES = ['planning', 'in_progress', 'in_review', 'conflict'];
+
 const socket = io({ withCredentials: true });
 const cards = new Map();
 let activeCardId = null;
@@ -131,6 +134,10 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     zone.classList.remove("dragover");
     const cardId = e.dataTransfer.getData("text/plain");
     const stage = zone.id.replace("col-", "");
+    if (BLOCKED_STAGES.includes(stage)) {
+      console.warn(`Cannot drop card into agent-only stage: ${stage}`);
+      return;
+    }
     socket.emit("move_card", { cardId, stage });
   });
 });

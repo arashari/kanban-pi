@@ -9,6 +9,9 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
+// Stages humans cannot move a card INTO (agent-only)
+const BLOCKED_STAGES: string[] = ["planning", "in_progress", "in_review", "conflict"];
+
 // ── Logger ─────────────────────────────────────────────
 const LOG_PATH = process.env.LOG_FILE || "server.log";
 const logStream = fs.createWriteStream(LOG_PATH, { flags: "a" });
@@ -110,9 +113,13 @@ app.post("/api/cards", (req, res) => {
 });
 
 app.patch("/api/cards/:id/move", (req, res) => {
+  const stage = req.body.stage;
+  if (BLOCKED_STAGES.includes(stage)) {
+    return res.status(400).json({ error: `Cannot move card to agent-only stage: ${stage}` });
+  }
   const payload: MoveCardPayload = {
     cardId: req.params.id,
-    stage: req.body.stage,
+    stage,
   };
   orchestrator
     .moveCard(payload)
@@ -146,6 +153,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("move_card", (payload: MoveCardPayload) => {
+    if (BLOCKED_STAGES.includes(payload.stage)) {
+      socket.emit("card_event", {
+        cardId: payload.cardId,
+        type: "error",
+        error: `Cannot move card to agent-only stage: ${payload.stage}`,
+      });
+      return;
+    }
     orchestrator.moveCard(payload).catch(log);
   });
 

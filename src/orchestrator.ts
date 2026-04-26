@@ -81,8 +81,11 @@ export class Orchestrator {
         card.branchName = `card/${card.id}`;
         agentCwd = worktreePath;
       } else {
-        agentCwd = `/tmp/.kanban-chat-${card.id}`;
-        await fs.promises.mkdir(agentCwd, { recursive: true });
+        const project = getProjectById(card.projectId);
+        agentCwd = project?.path || `/tmp/.kanban-chat-${card.id}`;
+        if (!project) {
+          await fs.promises.mkdir(agentCwd, { recursive: true });
+        }
       }
 
       const project = getProjectById(card.projectId);

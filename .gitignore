@@ -30,3 +30,4 @@ data/
 # Temporary files
 *.tmp
 *.temp
+.kanban-worktrees/

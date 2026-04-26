@@ -204,6 +204,11 @@ export class CardAgent {
     if (this.chatOnly) {
       promptText =
         `You are in chat-only mode. Do not create or modify files unless the user explicitly requests it.\n\n` +
+        `=== PROJECT ===\n` +
+        `Project name: ${this.projectName || "unknown"}\n` +
+        `Repository path: ${this.repoPath || this.sandboxPath}\n\n` +
+        `You may explore the codebase, answer questions, and analyze the project files.\n` +
+        `Be concise and reference file paths when relevant.\n\n` +
         `Task: ${this.title}\n` +
         `Description: ${this.description}`;
     } else {

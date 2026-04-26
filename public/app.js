@@ -182,7 +182,7 @@ function renderCard(card) {
     <div class="card-indicator" id="indicator-${card.id}">
       ${card.turnActive ? '<div class="spinner"></div><span>Running…</span>' : ""}
     </div>
-    ${showBtn ? `<div class="card-actions"><button class="btn-done" data-action="done">${btnLabel}</button></div>` : ''}
+    ${showBtn ? `<div class="card-actions"><button class="btn-delete" data-action="delete">🗑 Delete</button><button class="btn-done" data-action="done">${btnLabel}</button></div>` : `<div class="card-actions"><button class="btn-delete" data-action="delete">🗑 Delete</button></div>`}
   `;
 
   el.addEventListener("dragstart", (e) => {
@@ -201,6 +201,16 @@ function renderCard(card) {
     doneBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       socket.emit('move_card', { cardId: card.id, stage: 'done' });
+    });
+  }
+
+  const deleteBtn = el.querySelector('.btn-delete');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete card "${card.title}"?`)) {
+        socket.emit('delete_card', card.id);
+      }
     });
   }
 
@@ -259,28 +269,35 @@ function updateCardDom(card) {
     }
   }
 
-  // Update or remove the action button based on stage
+  // Update or remove the action buttons based on stage
   let actionsDiv = el.querySelector('.card-actions');
-  const showBtn = card.stage !== 'done' && card.stage !== 'conflict';
-  if (!showBtn && actionsDiv) {
-    actionsDiv.remove();
-  } else if (showBtn) {
-    const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
-    if (!actionsDiv) {
-      actionsDiv = document.createElement('div');
-      actionsDiv.className = 'card-actions';
-      actionsDiv.innerHTML = `<button class="btn-done" data-action="done">${btnLabel}</button>`;
-      el.appendChild(actionsDiv);
-      actionsDiv.querySelector('.btn-done').addEventListener('click', (e) => {
-        e.stopPropagation();
-        socket.emit('move_card', { cardId: card.id, stage: 'done' });
-      });
-    } else {
-      const btn = actionsDiv.querySelector('.btn-done');
-      if (btn && btn.textContent !== btnLabel) {
-        btn.textContent = btnLabel;
+  const showDone = card.stage !== 'done' && card.stage !== 'conflict';
+  const btnLabel = card.stage === 'in_review' ? '✅ Merge' : '✅ Done';
+  if (!actionsDiv) {
+    actionsDiv = document.createElement('div');
+    actionsDiv.className = 'card-actions';
+    el.appendChild(actionsDiv);
+  }
+  // Update/replace inner HTML
+  const doneHtml = showDone ? `<button class="btn-done" data-action="done">${btnLabel}</button>` : '';
+  const deleteHtml = `<button class="btn-delete" data-action="delete">🗑 Delete</button>`;
+  actionsDiv.innerHTML = deleteHtml + doneHtml;
+  // Re-attach listeners
+  const doneBtn = actionsDiv.querySelector('.btn-done');
+  if (doneBtn) {
+    doneBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      socket.emit('move_card', { cardId: card.id, stage: 'done' });
+    });
+  }
+  const deleteBtn = actionsDiv.querySelector('.btn-delete');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete card "${card.title}"?`)) {
+        socket.emit('delete_card', card.id);
       }
-    }
+    });
   }
 }
 

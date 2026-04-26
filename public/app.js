@@ -16,11 +16,14 @@ function renderCard(card) {
   const stageLabel = card.stage.replace("_", " ");
 
   el.innerHTML = `
-    <div class="card-title">${escapeHtml(card.title)}</div>
+    <div class="card-title">${card.chatOnly ? '💬 ' : '🔧 '}${escapeHtml(card.title)}</div>
     <div class="card-desc">${escapeHtml(card.description)}</div>
     <span class="card-stage ${card.stage}">${stageLabel}</span>
     <div class="card-indicator" id="indicator-${card.id}">
       ${card.turnActive ? '<div class="spinner"></div><span>Running…</span>' : ""}
+    </div>
+    <div class="card-actions">
+      <button class="btn-done" data-action="done">✅ Done</button>
     </div>
   `;
 
@@ -34,6 +37,14 @@ function renderCard(card) {
   });
 
   el.addEventListener("click", () => openDrawer(card.id));
+
+  const doneBtn = el.querySelector('.btn-done');
+  if (doneBtn) {
+    doneBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      socket.emit('move_card', { cardId: card.id, stage: 'done' });
+    });
+  }
 
   return el;
 }
@@ -128,7 +139,16 @@ socket.on("card_update", (card) => {
   }
   // If this card is open, refresh its meta line
   if (activeCardId === card.id) {
-    drawerMeta.textContent = `${card.stage.replace("_", " ").toUpperCase()}\n—\n${card.description}`;
+    let meta = `${card.stage.replace("_", " ").toUpperCase()}`;
+    if (card.chatOnly) meta += " · 💬 Chat only";
+    if (card.branchName) meta += ` · 🌿 ${card.branchName}`;
+    if (card.commits?.length) {
+      const last = card.commits[card.commits.length - 1];
+      meta += ` · ✅ ${last.hash.slice(0, 7)} "${last.message}"`;
+    }
+    if (card.mergeError) meta += `\n❌ Merge error: ${card.mergeError}`;
+    meta += `\n—\n${card.description}`;
+    drawerMeta.textContent = meta;
   }
 });
 
@@ -181,19 +201,21 @@ cancelBtn.addEventListener("click", () => {
 createBtn.addEventListener("click", () => {
   const title = titleInput.value.trim();
   const description = descInput.value.trim();
+  const chatOnly = document.getElementById("card-chat-only")?.checked || false;
 
   if (!title) return;
 
   // Disable to prevent double-clicks
   createBtn.disabled = true;
 
-  socket.emit("create_card", { title, description }, (card) => {
+  socket.emit("create_card", { title, description, chatOnly }, (card) => {
     // DO NOT add the card here — card_update from the server is the
     // single source of truth for DOM insertion. Close the modal and
     // let the broadcast handler place the card.
     modal.classList.add("hidden");
     titleInput.value = "";
     descInput.value = "";
+    document.getElementById("card-chat-only").checked = false;
     createBtn.disabled = false;
   });
 });
@@ -204,6 +226,8 @@ const drawerClose = document.getElementById("drawer-close");
 const drawerTitle = document.getElementById("drawer-title");
 const drawerMeta = document.getElementById("drawer-meta");
 const drawerStream = document.getElementById("drawer-stream");
+const drawerDiff = document.getElementById("drawer-diff");
+const drawerDiffBtn = document.getElementById("drawer-diff-btn");
 const drawerInput = document.getElementById("drawer-input");
 const drawerSend = document.getElementById("drawer-send");
 const drawerInterrupt = document.getElementById("drawer-interrupt");
@@ -219,8 +243,21 @@ function openDrawer(cardId) {
   if (!card) return;
 
   drawerTitle.textContent = card.title;
-  drawerMeta.textContent = `${card.stage.replace("_", " ").toUpperCase()}\n—\n${card.description}`;
+  let meta = `${card.stage.replace("_", " ").toUpperCase()}`;
+  if (card.chatOnly) meta += " · 💬 Chat only";
+  if (card.branchName) meta += ` · 🌿 ${card.branchName}`;
+  if (card.commits?.length) {
+    const last = card.commits[card.commits.length - 1];
+    meta += ` · ✅ ${last.hash.slice(0, 7)} "${last.message}"`;
+  }
+  if (card.mergeError) meta += `\n❌ Merge error: ${card.mergeError}`;
+  meta += `\n—\n${card.description}`;
+  drawerMeta.textContent = meta;
   drawerStream.innerHTML = "";
+  drawerDiff.innerHTML = "";
+  drawerDiff.classList.add("hidden");
+  drawerStream.classList.remove("hidden");
+  if (drawerDiffBtn) drawerDiffBtn.textContent = "View diff";
   drawer.classList.remove("hidden");
 
   socket.emit("view_card", { cardId, offset: 0, limit: 50 });
@@ -230,6 +267,62 @@ function closeDrawer() {
   activeCardId = null;
   flushBlocks();
   drawer.classList.add("hidden");
+  showStream();
+}
+
+function showStream() {
+  drawerDiff.classList.add("hidden");
+  drawerStream.classList.remove("hidden");
+  if (drawerDiffBtn) drawerDiffBtn.textContent = "View diff";
+}
+
+function showDiff() {
+  drawerStream.classList.add("hidden");
+  drawerDiff.classList.remove("hidden");
+  if (drawerDiffBtn) drawerDiffBtn.textContent = "Back to chat";
+}
+
+async function loadAndRenderDiff(cardId) {
+  if (!cardId) return;
+  drawerDiff.innerHTML = '<span class="spinner" style="width:14px;height:14px;"></span> Loading diff…';
+  showDiff();
+  try {
+    const res = await fetch(`/api/cards/${cardId}/diff`, { credentials: "include" });
+    const data = await res.json();
+    if (!res.ok) {
+      drawerDiff.innerHTML = `<div class="diff-empty">⚠️ ${escapeHtml(data.error || "Could not load diff")}</div>`;
+      return;
+    }
+    renderDiff(data.diff);
+  } catch (e) {
+    drawerDiff.innerHTML = `<div class="diff-empty">❌ ${escapeHtml(String(e))}</div>`;
+  }
+}
+
+function renderDiff(raw) {
+  const lines = raw.split("\n");
+  const container = document.createElement("div");
+  for (const line of lines) {
+    const p = document.createElement("div");
+    p.className = "diff-line";
+    if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+      p.classList.add("header");
+    } else if (line.startsWith("@@")) {
+      p.classList.add("info");
+    } else if (line.startsWith("+")) {
+      p.classList.add("add");
+    } else if (line.startsWith("-")) {
+      p.classList.add("del");
+    }
+    p.textContent = line;
+    container.appendChild(p);
+  }
+  drawerDiff.innerHTML = "";
+  if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === "")) {
+    drawerDiff.innerHTML = `<div class="diff-empty">No changes yet.</div>`;
+  } else {
+    drawerDiff.appendChild(container);
+  }
 }
 
 drawerClose.addEventListener("click", closeDrawer);
@@ -367,6 +460,16 @@ function appendToDrawer(event, container = drawerStream) {
       break;
     }
 
+    case "commit": {
+      flushBlocks();
+      const el = document.createElement("div");
+      el.className = "commit";
+      const c = event.commit;
+      el.textContent = `✅ Committed ${c.hash.slice(0, 7)}: ${c.message}`;
+      container.appendChild(el);
+      break;
+    }
+
     case "status": {
       flushBlocks();
       const el = document.createElement("div");
@@ -493,6 +596,19 @@ drawerInterrupt.addEventListener("click", () => {
   if (shouldScroll) scrollToBottom();
   updateJumpButton();
 });
+
+// ── View diff ────────────────────────────────────────
+if (drawerDiffBtn) {
+  drawerDiffBtn.addEventListener("click", () => {
+    if (!activeCardId) return;
+    const isDiffVisible = !drawerDiff.classList.contains("hidden");
+    if (isDiffVisible) {
+      showStream();
+    } else {
+      loadAndRenderDiff(activeCardId);
+    }
+  });
+}
 
 // ── Sending messages ──────────────────────────────────
 drawerSend.addEventListener("click", () => {

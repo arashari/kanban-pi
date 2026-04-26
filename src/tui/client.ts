@@ -55,6 +55,11 @@ const board = new Board(state, async (action, card) => {
       if (stage) state.moveCard(card.id, stage);
       break;
     }
+    case "done": {
+      if (!card) return;
+      state.moveCard(card.id, "done");
+      break;
+    }
     case "prompt": {
       if (!card) return;
       const message = await askInput(tui, `Prompt "${card.title}": `);

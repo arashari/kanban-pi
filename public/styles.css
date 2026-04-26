@@ -142,6 +142,7 @@ body {
 .card-stage.in_progress{ background: #1e3a2f; color: #4ade80; }
 .card-stage.in_review  { background: #2e1e4a; color: #c084fc; }
 .card-stage.done       { background: #1e3a2f; color: #4ade80; }
+.card-stage.conflict   { background: #3f1818; color: #f87171; }
 
 .card-indicator {
   margin-top: 8px;
@@ -149,6 +150,30 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 11px;
+}
+
+.card-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.btn-done {
+  background: #1e3a2f;
+  color: #4ade80;
+  border: 1px solid #166534;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-done:hover {
+  background: #166534;
+  border-color: #22c55e;
 }
 
 .spinner {
@@ -185,6 +210,21 @@ body {
 }
 
 .modal-content h3 { margin-top: 0; }
+
+.modal-content .toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.modal-content input[type="checkbox"] {
+  width: auto;
+  margin-bottom: 0;
+}
 
 .modal-content input,
 .modal-content textarea {
@@ -231,6 +271,17 @@ body {
 }
 
 .drawer-header h3 { margin: 0; }
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-header-actions .btn-secondary {
+  font-size: 12px;
+  padding: 4px 10px;
+}
 
 .drawer-body {
   position: relative;
@@ -366,11 +417,69 @@ body {
   margin-top: 4px;
 }
 
+.diff {
+  flex: 1;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  min-height: 0;
+  display: none;
+}
+
+.diff.hidden {
+  display: none;
+}
+
+.diff:not(.hidden) {
+  display: block;
+}
+
+.diff-line {
+  white-space: pre;
+  padding: 1px 4px;
+  margin: 0;
+}
+
+.diff-line.add {
+  color: #4ade80;
+  background: #1e3a2f;
+}
+
+.diff-line.del {
+  color: #f87171;
+  background: #3f1818;
+}
+
+.diff-line.header {
+  color: #60a5fa;
+  font-weight: 500;
+}
+
+.diff-line.info {
+  color: #94a3b8;
+}
+
+.diff-empty {
+  color: #94a3b8;
+  padding: 8px 4px;
+}
+
 .stream .stage-change {
   color: #60a5fa;
   font-size: 11px;
   font-weight: 500;
   margin-top: 8px;
+}
+
+.stream .commit {
+  color: #4ade80;
+  margin: 8px 0;
+  padding: 6px 10px;
+  background: #1e3a2f;
+  border-radius: 4px;
+  font-size: 12px;
 }
 
 /* Drawer loading indicator */

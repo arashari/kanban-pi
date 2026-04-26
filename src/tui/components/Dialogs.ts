@@ -20,6 +20,7 @@ const stageItems: SelectItem[] = [
   { value: "in_progress", label: "In Progress" },
   { value: "in_review", label: "In Review" },
   { value: "done", label: "Done" },
+  { value: "conflict", label: "⚠️ Conflict" },
 ];
 
 const selectTheme = {

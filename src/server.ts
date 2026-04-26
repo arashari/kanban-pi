@@ -4,6 +4,10 @@ import { Server } from "socket.io";
 import { Orchestrator } from "./orchestrator.js";
 import type { CreateCardPayload, MoveCardPayload, PromptCardPayload } from "./types.js";
 import fs from "fs";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 // ── Logger ─────────────────────────────────────────────
 const LOG_PATH = process.env.LOG_FILE || "server.log";
@@ -85,6 +89,20 @@ app.get("/api/cards", (_req, res) => {
   res.json(orchestrator.getAllCards());
 });
 
+app.get("/api/cards/:id/diff", async (req, res) => {
+  const card = orchestrator.getCard(req.params.id);
+  if (!card) return res.status(404).json({ error: "Card not found" });
+  if (!card.branchName) {
+    return res.status(400).json({ error: "No branch for this card — chat-only or not started" });
+  }
+  try {
+    const { stdout } = await execAsync(`git diff HEAD...${card.branchName}`, { cwd: process.cwd() });
+    res.json({ diff: stdout });
+  } catch (err: any) {
+    res.status(500).json({ error: err.stderr || err.message || "Diff failed" });
+  }
+});
+
 app.post("/api/cards", (req, res) => {
   const payload = req.body as CreateCardPayload;
   const card = orchestrator.createCard(payload);
@@ -102,9 +120,19 @@ app.patch("/api/cards/:id/move", (req, res) => {
     .catch((err) => res.status(400).json({ error: err.message }));
 });
 
-app.delete("/api/cards/:id", (req, res) => {
-  orchestrator.deleteCard(req.params.id);
+app.delete("/api/cards/:id", async (req, res) => {
+  await orchestrator.deleteCard(req.params.id);
   res.json({ success: true });
+});
+
+// Internal endpoint for worktree commits
+app.post("/internal/card-commit", (req, res) => {
+  const { sessionId, hash, message, description } = req.body;
+  if (!sessionId || !hash) {
+    return res.status(400).json({ received: false, error: "Missing sessionId or hash" });
+  }
+  const ok = orchestrator.recordCommitBySession(sessionId, hash, message, description);
+  res.json({ received: ok });
 });
 
 // ─── Socket.io ─────────────────────────────────────────────

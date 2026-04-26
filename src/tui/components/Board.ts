@@ -4,7 +4,7 @@ import { matchesKey, Key, truncateToWidth, visibleWidth } from "@mariozechner/pi
 import type { KanbanCard, CardStage } from "../../types.js";
 import type { BoardState } from "../state.js";
 
-const STAGES: CardStage[] = ["backlog", "todo", "planning", "in_progress", "in_review", "done"];
+const STAGES: CardStage[] = ["backlog", "todo", "planning", "in_progress", "in_review", "done", "conflict"];
 const STAGE_LABELS: Record<CardStage, string> = {
   backlog: "Backlog",
   todo: "To Do",
@@ -12,6 +12,7 @@ const STAGE_LABELS: Record<CardStage, string> = {
   in_progress: "In Progress",
   in_review: "In Review",
   done: "Done",
+  conflict: "⚠️ Conflict",
 };
 
 function padToWidth(line: string, width: number): string {
@@ -103,6 +104,9 @@ export class Board implements Component {
       if (card) this.onAction("interrupt", card);
     } else if (data === "q" || data === "Q" || matchesKey(data, Key.ctrl("c"))) {
       this.onAction("quit");
+    } else if (data === "f" || data === "F") {
+      const card = this.getSelectedCard();
+      if (card) this.onAction("done", card);
     } else if (data === "r" || data === "R") {
       this.onAction("refresh");
     }
@@ -235,7 +239,7 @@ export class Board implements Component {
       const info = selected
         ? `| [${truncateToWidth(selected.title, 30)}] ${chalk.gray(selected.id.slice(0, 8))}`
         : "";
-      const help = chalk.gray(" [←→↑↓]nav 🐱[c]create [d]delete [m]move [p]rompt [s]teer [i]nterrupt [↵]view [q]uit");
+      const help = chalk.gray(" [←→↑↓]nav 🐱[c]create [d]delete [m]move [f]done [p]rompt [s]teer [i]nterrupt [↵]view [q]uit");
       const footerLeft = status + info;
       const footer = footerLeft + " ".repeat(Math.max(0, width - visibleWidth(footerLeft) - visibleWidth(help))) + help;
       lines.push(truncateToWidth(footer, width));

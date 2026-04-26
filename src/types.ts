@@ -4,15 +4,28 @@ export type CardStage =
   | "planning"
   | "in_progress"
   | "in_review"
-  | "done";
+  | "done"
+  | "conflict";
+
+export interface CommitInfo {
+  hash: string;
+  message: string;
+  description?: string;
+  date: number;
+}
 
 export interface KanbanCard {
   id: string;
   title: string;
   description: string;
   stage: CardStage;
+  chatOnly?: boolean;
+  worktreePath?: string;
+  branchName?: string;
+  commits?: CommitInfo[];
   sessionId?: string;
   turnActive?: boolean;
+  mergeError?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -27,7 +40,8 @@ export interface CardEvent {
     | "tool_result"
     | "message_complete"
     | "error"
-    | "status";
+    | "status"
+    | "commit";
   stage?: CardStage;
   text?: string;
   toolName?: string;
@@ -35,11 +49,13 @@ export interface CardEvent {
   output?: unknown;
   error?: string;
   thinking?: string;
+  commit?: CommitInfo;
 }
 
 export interface CreateCardPayload {
   title: string;
   description: string;
+  chatOnly?: boolean;
 }
 
 export interface MoveCardPayload {

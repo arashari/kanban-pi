@@ -38,6 +38,10 @@
       <h2>✅ Done</h2>
       <div class="dropzone" id="col-done"></div>
     </div>
+    <div class="column" data-stage="conflict">
+      <h2>⚠️ Conflict</h2>
+      <div class="dropzone" id="col-conflict"></div>
+    </div>
   </main>
 
   <!-- New Card Modal -->
@@ -46,6 +50,10 @@
       <h3>Create New Card</h3>
       <input id="card-title" type="text" placeholder="Card title..." />
       <textarea id="card-desc" rows="4" placeholder="What should the agent do?"></textarea>
+      <label class="toggle-label">
+        <input type="checkbox" id="card-chat-only" />
+        💬 Chat only (no file changes)
+      </label>
       <div class="modal-actions">
         <button id="cancel-btn" class="btn-secondary">Cancel</button>
         <button id="create-btn" class="btn">Create</button>
@@ -57,7 +65,10 @@
   <div id="drawer" class="drawer hidden">
     <div class="drawer-header">
       <h3 id="drawer-title">Card</h3>
-      <button id="drawer-close" class="btn-icon">✕</button>
+      <div class="drawer-header-actions">
+        <button id="drawer-diff-btn" class="btn-secondary">View diff</button>
+        <button id="drawer-close" class="btn-icon">✕</button>
+      </div>
     </div>
     <div class="drawer-body">
       <div id="drawer-loader" class="drawer-loader hidden">
@@ -65,6 +76,7 @@
         <span>Loading older history…</span>
       </div>
       <div id="drawer-meta" class="meta"></div>
+      <div id="drawer-diff" class="diff hidden"></div>
       <div id="drawer-stream" class="stream"></div>
       <button id="jump-to-latest" class="jump-to-latest hidden">⬇ Jump to latest</button>
     </div>

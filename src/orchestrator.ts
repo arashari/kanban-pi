@@ -1,4 +1,8 @@
 import { Server as SocketServer } from "socket.io";
+import path from "path";
+import fs from "fs";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { CardAgent } from "./CardAgent.js";
 import type {
   KanbanCard,
@@ -7,7 +11,11 @@ import type {
   MoveCardPayload,
   PromptCardPayload,
   CardEvent,
+  CommitInfo,
 } from "./types.js";
+
+const execAsync = promisify(exec);
+const WORKTREE_BASE = ".kanban-worktrees";
 
 export class Orchestrator {
   private cards = new Map<string, KanbanCard>();
@@ -26,6 +34,7 @@ export class Orchestrator {
       title: payload.title,
       description: payload.description,
       stage: "backlog",
+      chatOnly: payload.chatOnly,
       turnActive: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -44,11 +53,32 @@ export class Orchestrator {
     card.updatedAt = Date.now();
 
     if (payload.stage === "todo" && oldStage === "backlog") {
+      let agentCwd = process.cwd();
+      let worktreePath: string | undefined;
+
+      if (!card.chatOnly) {
+        worktreePath = await this.createWorktree(card.id);
+        card.worktreePath = worktreePath;
+        card.branchName = `card/${card.id}`;
+        agentCwd = worktreePath;
+      } else {
+        agentCwd = `/tmp/.kanban-chat-${card.id}`;
+        await fs.promises.mkdir(agentCwd, { recursive: true });
+      }
+
       const agent = new CardAgent(
         card.id,
         card.title,
         card.description,
-        (event) => this.handleAgentEvent(card.id, event)
+        {
+          chatOnly: card.chatOnly,
+          worktreePath,
+          sandboxPath: agentCwd,
+          onEvent: (event) => this.handleAgentEvent(card.id, event),
+          onSubmitChanges: !card.chatOnly
+            ? (hash, message, description) => this.handleCommit(card.id, hash, message, description)
+            : undefined,
+        }
       );
       this.agents.set(card.id, agent);
       await agent.init();
@@ -64,6 +94,42 @@ export class Orchestrator {
         this.agents.delete(card.id);
       }
       card.turnActive = false;
+
+      if (!card.chatOnly && card.branchName && card.commits && card.commits.length > 0) {
+        const mergeResult = await this.mergeBranch(card);
+        if (mergeResult.error) {
+          card.mergeError = mergeResult.error;
+          card.stage = "conflict";
+          console.log(`[orchestrator] Card ${card.id} merge failed — moved to conflict`);
+          const event: CardEvent = {
+            cardId: card.id,
+            type: "error",
+            error: `Merge failed: ${mergeResult.error}`,
+          };
+          const history = this.eventHistory.get(card.id) || [];
+          history.push(event);
+          this.eventHistory.set(card.id, history);
+          this.io.emit("card_event", event);
+        } else {
+          card.mergeError = undefined;
+          if (card.worktreePath) {
+            try { await execAsync(`git worktree remove --force "${card.worktreePath}"`); } catch {}
+            card.worktreePath = undefined;
+          }
+          try { await execAsync(`git branch -D ${card.branchName}`); } catch {}
+          card.branchName = undefined;
+
+          const event: CardEvent = {
+            cardId: card.id,
+            type: "status",
+            text: `Merged into main: ${mergeResult.stdout || "success"}`,
+          };
+          const history = this.eventHistory.get(card.id) || [];
+          history.push(event);
+          this.eventHistory.set(card.id, history);
+          this.io.emit("card_event", event);
+        }
+      }
     }
 
     if (payload.stage === "backlog" && oldStage !== "backlog") {
@@ -108,15 +174,94 @@ export class Orchestrator {
     await agent.abort();
   }
 
-  deleteCard(cardId: string) {
+  async deleteCard(cardId: string) {
+    const card = this.cards.get(cardId);
+
+    if (card?.worktreePath) {
+      try {
+        await execAsync(`git worktree remove --force "${card.worktreePath}"`);
+      } catch (e) {
+        console.error(`[orchestrator] Failed to remove worktree for ${cardId}:`, e);
+      }
+      try {
+        if (card.branchName) {
+          await execAsync(`git branch -D ${card.branchName}`);
+        }
+      } catch {
+        // Branch may already be gone
+      }
+    }
+
+    if (card?.chatOnly) {
+      try {
+        await fs.promises.rm(`/tmp/.kanban-chat-${cardId}`, { recursive: true, force: true });
+      } catch {}
+    }
+
     const agent = this.agents.get(cardId);
     if (agent) {
-      agent.dispose();
+      await agent.dispose();
       this.agents.delete(cardId);
     }
     this.cards.delete(cardId);
     this.eventHistory.delete(cardId);
     this.io.emit("card_deleted", { cardId });
+  }
+
+  private async createWorktree(cardId: string): Promise<string> {
+    const worktreePath = path.join(process.cwd(), WORKTREE_BASE, cardId);
+    const branchName = `card/${cardId}`;
+
+    await fs.promises.mkdir(path.join(process.cwd(), WORKTREE_BASE), { recursive: true });
+
+    // Clean up any stale worktree or leftover directory
+    try { await execAsync(`git worktree remove --force "${worktreePath}"`); } catch { /* ignore */ }
+    try { await fs.promises.rm(worktreePath, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { await execAsync(`git branch -D ${branchName}`); } catch { /* ignore */ }
+
+    await execAsync(`git worktree add -b "${branchName}" "${worktreePath}" HEAD`, { cwd: process.cwd() });
+
+    return worktreePath;
+  }
+
+  private async mergeBranch(card: KanbanCard): Promise<{ error?: string; stdout?: string }> {
+    if (!card.branchName) return { error: "No branch to merge" };
+    try {
+      const { stdout, stderr } = await execAsync(`git merge --no-edit "${card.branchName}"`, { cwd: process.cwd() });
+      return { stdout: stdout || stderr };
+    } catch (err: any) {
+      // Attempt to abort the failed merge so the repo isn't left in a dirty state
+      try { await execAsync(`git merge --abort`, { cwd: process.cwd() }); } catch {}
+      return { error: err.stderr || err.stdout || err.message || "Merge failed" };
+    }
+  }
+
+  private async handleCommit(cardId: string, hash: string, message: string, description?: string) {
+    const card = this.cards.get(cardId);
+    if (!card) return;
+    if (!card.commits) card.commits = [];
+    const commit: CommitInfo = { hash, message, description, date: Date.now() };
+    card.commits.push(commit);
+    card.updatedAt = Date.now();
+    this.broadcastCardUpdate(card);
+
+    const event: CardEvent = {
+      cardId,
+      type: "commit",
+      commit,
+      text: `Committed ${hash.slice(0, 7)}: ${message}`,
+    };
+    const history = this.eventHistory.get(cardId) || [];
+    history.push(event);
+    this.eventHistory.set(cardId, history);
+    this.io.emit("card_event", event);
+  }
+
+  recordCommitBySession(sessionId: string, hash: string, message: string, description?: string): boolean {
+    const cardId = this.findCardIdBySessionId(sessionId);
+    if (!cardId) return false;
+    this.handleCommit(cardId, hash, message, description);
+    return true;
   }
 
   private findCardIdBySessionId(sessionId: string): string | undefined {
@@ -163,6 +308,10 @@ export class Orchestrator {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  getCard(cardId: string): KanbanCard | undefined {
+    return this.cards.get(cardId);
+  }
+
   getAllCards(): KanbanCard[] {
     return Array.from(this.cards.values()).sort((a, b) => b.createdAt - a.createdAt);
   }
@@ -180,14 +329,12 @@ export class Orchestrator {
     const card = this.cards.get(cardId);
     if (!card) return;
 
-    // Track running/idle state separately from history stream
     if (event.type === "status" && (event.text === "running" || event.text === "idle")) {
       card.turnActive = event.text === "running";
       this.broadcastCardUpdate(card);
-      return; // synthetic state event — skip history and drawer
+      return;
     }
 
-    // Store in history for reload replay
     const history = this.eventHistory.get(cardId) || [];
     history.push(event);
     this.eventHistory.set(cardId, history);
@@ -200,7 +347,6 @@ export class Orchestrator {
       this.broadcastCardUpdate(card);
     }
 
-    // Forward all events to the frontend
     this.io.emit("card_event", event);
   }
 
